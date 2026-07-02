@@ -72,3 +72,38 @@ def test_tool_results_follow_assistant_tool_calls_immediately():
     assert messages[1] == {"role": "tool", "tool_call_id": "toolu_123", "content": "result"}
     assert messages[2] == {"role": "user", "content": "continue"}
 
+
+def test_siliconflow_custom_omits_inline_base64_images():
+    body = {
+        "model": "claude-sonnet-4-5",
+        "max_tokens": 16,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "describe"},
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": "abc",
+                        },
+                    },
+                ],
+            }
+        ],
+    }
+
+    converted = proxy.anthropic_to_openai(
+        body,
+        "Pro/moonshotai/Kimi-K2.6",
+        "custom",
+        "https://api.siliconflow.cn/v1",
+    )
+
+    content = converted["messages"][0]["content"]
+    assert isinstance(content, str)
+    assert "describe" in content
+    assert "omitted" in content
+    assert "image_url" not in content

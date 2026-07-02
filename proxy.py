@@ -67,6 +67,7 @@ class Config:
         "openai_model_pattern": r"^(gpt-|o1|o3|o4|chatgpt)",
         "custom_model_pattern": "",
         "reasoning_content_policy": "fallback",
+        "inline_image_policy": "auto",
         "proxy_host": "127.0.0.1",
         "proxy_port": 9876,
     }
@@ -87,6 +88,7 @@ class Config:
         "openai_model_pattern": "OPENAI_MODEL_PATTERN",
         "custom_model_pattern": "CUSTOM_MODEL_PATTERN",
         "reasoning_content_policy": "REASONING_CONTENT_POLICY",
+        "inline_image_policy": "INLINE_IMAGE_POLICY",
         "proxy_host": "PROXY_HOST",
         "proxy_port": "PROXY_PORT",
     }
@@ -172,6 +174,8 @@ class Config:
     def custom_model_pattern(self) -> str: return self._data["custom_model_pattern"]
     @property
     def reasoning_content_policy(self) -> str: return self._data["reasoning_content_policy"]
+    @property
+    def inline_image_policy(self) -> str: return self._data["inline_image_policy"]
     @property
     def proxy_host(self) -> str: return self._data["proxy_host"]
     @property
@@ -458,9 +462,48 @@ def sanitize_tool_schema(schema, *, force_object: bool = False) -> dict:
     return cleaned
 
 
-def anthropic_to_openai(anthropic_body: dict, backend_model: str) -> dict:
+def _is_inline_image_url(url: str) -> bool:
+    return isinstance(url, str) and url.startswith("data:")
+
+
+def _openai_image_url_from_anthropic(block: dict) -> Optional[str]:
+    if "image_url" in block:
+        image_url = block["image_url"]
+        if isinstance(image_url, dict):
+            return image_url.get("url")
+        if isinstance(image_url, str):
+            return image_url
+    if "source" in block:
+        src = block["source"]
+        if isinstance(src, dict):
+            mt = src.get("media_type", "image/png")
+            d = src.get("data", "")
+            if d:
+                return f"data:{mt};base64,{d}"
+    return None
+
+
+def _image_policy_for_backend(backend_name: str, backend_base_url: str) -> str:
+    policy = (config.inline_image_policy or "auto").lower()
+    if policy in {"preserve", "omit", "omit_inline"}:
+        return policy
+    if backend_name == "deepseek":
+        return "omit"
+    if backend_name == "custom" and "siliconflow" in (backend_base_url or "").lower():
+        return "omit_inline"
+    return "preserve"
+
+
+def anthropic_to_openai(
+    anthropic_body: dict,
+    backend_model: str,
+    backend_name: str = "",
+    backend_base_url: str = "",
+) -> dict:
     """Convert Anthropic Messages API request → OpenAI Chat Completions format."""
     openai_messages = []
+    backend_name = backend_name.lower()
+    image_policy = _image_policy_for_backend(backend_name, backend_base_url)
 
     # System prompt
     system = anthropic_body.get("system")
@@ -482,7 +525,7 @@ def anthropic_to_openai(anthropic_body: dict, backend_model: str) -> dict:
             if isinstance(content, str):
                 openai_content = content
             elif isinstance(content, list):
-                text_parts, images = [], []
+                text_parts, image_parts, omitted_images = [], [], 0
                 for block in content:
                     if not isinstance(block, dict):
                         continue
@@ -509,20 +552,27 @@ def anthropic_to_openai(anthropic_body: dict, backend_model: str) -> dict:
                     elif t == "text":
                         text_parts.append(block["text"])
                     elif t in ("image", "image_url"):
-                        images.append(block)
-                if images:
-                    openai_parts = []
-                    for img in images:
-                        if "image_url" in img:
-                            openai_parts.append({"type": "image_url", "image_url": img["image_url"]})
-                        elif "source" in img:
-                            src = img["source"]
-                            mt = src.get("media_type", "image/png")
-                            d = src.get("data", "")
-                            openai_parts.append({"type": "image_url", "image_url": {"url": f"data:{mt};base64,{d}"}})
+                        url = _openai_image_url_from_anthropic(block)
+                        if not url:
+                            omitted_images += 1
+                            continue
+                        if image_policy == "omit" or (image_policy == "omit_inline" and _is_inline_image_url(url)):
+                            omitted_images += 1
+                        else:
+                            image_parts.append({"type": "image_url", "image_url": {"url": url}})
+                if image_parts:
+                    openai_parts = list(image_parts)
                     if text_parts:
                         openai_parts.insert(0, {"type": "text", "text": " ".join(text_parts)})
+                    if omitted_images:
+                        openai_parts.append({
+                            "type": "text",
+                            "text": f"[{omitted_images} inline image attachment(s) omitted for backend compatibility.]",
+                        })
                     openai_content = openai_parts
+                elif omitted_images:
+                    image_note = f"[{omitted_images} inline image attachment(s) omitted for backend compatibility.]"
+                    openai_content = " ".join([*text_parts, image_note]).strip()
                 else:
                     openai_content = " ".join(text_parts)
             else:
@@ -598,7 +648,7 @@ def anthropic_to_openai(anthropic_body: dict, backend_model: str) -> dict:
         if openai_tools:
             openai_body["tools"] = openai_tools
             tool_choice = anthropic_body.get("tool_choice")
-            if tool_choice:
+            if tool_choice and backend_name != "deepseek":
                 if isinstance(tool_choice, dict) and tool_choice.get("type") == "tool":
                     choice_name = str(tool_choice.get("name", ""))
                     openai_body["tool_choice"] = {
@@ -769,7 +819,7 @@ async def messages_api(request: Request):
 
     stream = body.get("stream", False)
     request_id = f"msg_{uuid.uuid4().hex[:16]}"
-    openai_body = anthropic_to_openai(body, backend["model"])
+    openai_body = anthropic_to_openai(body, backend["model"], backend["backend"], backend["base_url"])
 
     print(f"[proxy] → {backend['backend']} | model={backend['model']} | "
           f"stream={stream} | original_model={original_model}")
@@ -982,7 +1032,7 @@ async def api_update_config(request: Request):
         "default_backend", "force_model",
         "deepseek_model_map", "openai_model_map", "custom_model_map",
         "deepseek_model_pattern", "openai_model_pattern", "custom_model_pattern",
-        "reasoning_content_policy",
+        "reasoning_content_policy", "inline_image_policy",
     }
     update_data = {k: v for k, v in body.items() if k in allowed_keys}
     # Reject masked API keys (bullet character U+2022)
@@ -1201,6 +1251,7 @@ async def health():
         "custom_configured": bool(config.custom_api_key and config.custom_base_url),
         "default_backend": config.default_backend,
         "force_model": config.force_model or "(none)",
+        "inline_image_policy": config.inline_image_policy,
         "proxy_dir": str(PROXY_DIR),
     }
 
