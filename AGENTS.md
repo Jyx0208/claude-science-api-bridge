@@ -31,9 +31,11 @@ The safe path is:
 3. Generate a local fake Claude Science OAuth token.
 4. Configure an API key and model mapping in `config.json` or the dashboard.
 5. Configure `model_aliases` and `model_list_mode=aliases` so Claude Science can show third-party model names.
-6. Set `inline_image_policy=preserve` or `auto` only when the selected backend supports image input.
-7. Start or restart Claude Science with `scripts/start-claude-science.sh`.
-8. Verify `/v1/models` and `/v1/messages` reach the proxy and the backend succeeds.
+6. Choose `*_upstream_mode=anthropic` for providers with native Anthropic endpoints; otherwise use `openai`.
+7. Set `inline_image_policy=preserve` or `auto` only when the selected backend supports image input.
+8. Optionally enable `proxy_auth_mode=required` only when the launch path will include the secret.
+9. Start or restart Claude Science with `scripts/start-claude-science.sh`.
+10. Verify `/v1/models` and `/v1/messages` reach the proxy and the backend succeeds.
 
 ## Repository Map
 

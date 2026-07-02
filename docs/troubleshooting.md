@@ -21,6 +21,22 @@ launchctl kickstart -k gui/$(id -u)/com.byok.claude-science-proxy
 
 The proxy sanitizes Claude tool schemas before sending them to OpenAI-compatible APIs. If this still appears, capture only the backend error text from `proxy.log`. Do not log full prompts or API keys.
 
+## Backend 400: max_tokens Too Large
+
+Some providers reject the large `max_tokens` values that Claude Science may request.
+
+Set a per-model cap:
+
+```json
+{
+  "model_token_caps": {
+    "provider-model-name": 8192
+  }
+}
+```
+
+Then restart the proxy and rerun `./scripts/verify-proxy.sh`.
+
 ## Tool Call Markers Appear As Text
 
 Some OpenAI-compatible providers may emit native tool-call markers such as:
@@ -56,6 +72,23 @@ If this message appears repeatedly:
 2. Run `./scripts/verify-proxy.sh` to confirm normal backend calls still work.
 3. Check whether recent requests show backend errors, timeouts, or only successful slow streams.
 4. Do not modify Clash, DNS, TUN, `/etc/hosts`, system proxy, certificates, or port 443 as a first response.
+
+## Requests Return 403 After Enabling Path-Secret
+
+If `proxy_auth_mode=required`, Claude Science must use a base URL with the secret path:
+
+```text
+http://127.0.0.1:9876/<secret>
+```
+
+Run:
+
+```bash
+./scripts/start-claude-science.sh
+./scripts/verify-proxy.sh
+```
+
+Both scripts read `config.json`, append the secret automatically, and mask it in output. Do not paste the raw secret into issue reports or chat logs.
 
 ## SSL Certificate Verify Failed When Proxy Calls Backend
 

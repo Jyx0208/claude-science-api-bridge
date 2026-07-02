@@ -18,12 +18,19 @@
   "model_aliases": [
     {
       "id": "byok-model-0001",
-      "display_name": "Kimi K2.6 Pro++",
-      "backend": "custom",
-      "model": "Pro/moonshotai/Kimi-K2.6"
+      "display_name": "DeepSeek Chat",
+      "backend": "deepseek",
+      "model": "deepseek-chat"
     }
   ],
   "model_list_mode": "aliases",
+  "model_token_caps": {},
+  "default_max_tokens_cap": 0,
+  "deepseek_upstream_mode": "openai",
+  "openai_upstream_mode": "openai",
+  "custom_upstream_mode": "openai",
+  "proxy_auth_token": "",
+  "proxy_auth_mode": "optional",
   "deepseek_model_pattern": "deepseek|deep-seek",
   "openai_model_pattern": "^(gpt-|o1|o3|o4|chatgpt)",
   "custom_model_pattern": "",

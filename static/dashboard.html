@@ -218,6 +218,17 @@
 
   <!-- Tab: API 配置 -->
   <div class="tab-content active" id="tab-providers">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:14px"><span class="icon">🧭</span> Provider 预设</div>
+      <div class="form-group">
+        <label>快速套用</label>
+        <select id="providerPreset"></select>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-outline btn-sm" onclick="applyProviderPreset()">⚡ 应用预设</button>
+      </div>
+    </div>
+
     <!-- DeepSeek -->
     <div class="card">
       <div class="card-header">
@@ -236,6 +247,13 @@
       <div class="form-group">
         <label>API Base URL</label>
         <input type="text" id="deepseekBase" value="https://api.deepseek.com" placeholder="https://api.deepseek.com">
+      </div>
+      <div class="form-group">
+        <label>上游协议</label>
+        <select id="deepseekMode">
+          <option value="openai">OpenAI-compatible</option>
+          <option value="anthropic">Anthropic native</option>
+        </select>
       </div>
       <div class="btn-group">
         <button class="btn btn-outline btn-sm" onclick="testBackend('deepseek')">🔍 测试连接</button>
@@ -262,6 +280,13 @@
         <label>API Base URL</label>
         <input type="text" id="openaiBase" value="https://api.openai.com" placeholder="https://api.openai.com">
       </div>
+      <div class="form-group">
+        <label>上游协议</label>
+        <select id="openaiMode">
+          <option value="openai">OpenAI-compatible</option>
+          <option value="anthropic">Anthropic native</option>
+        </select>
+      </div>
       <div class="btn-group">
         <button class="btn btn-outline btn-sm" onclick="testBackend('openai')">🔍 测试连接</button>
         <button class="btn btn-primary btn-sm" onclick="saveProvider('openai')">💾 保存</button>
@@ -286,6 +311,13 @@
       <div class="form-group">
         <label>API Base URL</label>
         <input type="text" id="customBase" placeholder="https://provider.example.com 或 https://provider.example.com/v1">
+      </div>
+      <div class="form-group">
+        <label>上游协议</label>
+        <select id="customMode">
+          <option value="openai">OpenAI-compatible</option>
+          <option value="anthropic">Anthropic native</option>
+        </select>
       </div>
       <div class="btn-group">
         <button class="btn btn-outline btn-sm" onclick="testBackend('custom')">🔍 测试连接</button>
@@ -322,6 +354,26 @@
         <label>第三方模型别名（JSON）</label>
         <textarea id="modelAliases" rows="7" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:8px;font-family:monospace"
           placeholder='[{"id":"byok-model-0001","display_name":"Kimi K2.6 Pro++","backend":"custom","model":"Pro/moonshotai/Kimi-K2.6"}]'></textarea>
+      </div>
+      <div class="form-group">
+        <label>模型 max_tokens 上限（JSON，留空不夹取）</label>
+        <textarea id="modelTokenCaps" rows="4" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:8px;font-family:monospace"
+          placeholder='{"Pro/moonshotai/Kimi-K2.6":8192}'></textarea>
+      </div>
+      <div class="form-group">
+        <label>默认 max_tokens 上限（0 表示不启用）</label>
+        <input type="number" id="defaultMaxTokensCap" min="0" step="1" value="0">
+      </div>
+      <div class="form-group">
+        <label>本地 path-secret 模式</label>
+        <select id="proxyAuthMode">
+          <option value="optional">optional：兼容裸路径和 secret 路径</option>
+          <option value="required">required：只有 secret 路径可访问推理接口</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>本地 path-secret</label>
+        <input type="password" id="proxyAuthToken" placeholder="留空关闭；required 时脚本会拼进 ANTHROPIC_BASE_URL" autocomplete="off">
       </div>
     </div>
 
@@ -482,6 +534,19 @@ async function api(path, opts={}) {
   return res.json();
 }
 
+let providerPresets = {};
+
+async function loadProviderPresets() {
+  try {
+    const res = await api('/api/provider-presets');
+    providerPresets = res.presets || {};
+    const select = document.getElementById('providerPreset');
+    select.innerHTML = Object.entries(providerPresets).map(([id, preset]) =>
+      `<option value="${id}">${preset.label || id}</option>`
+    ).join('');
+  } catch(e) { console.error('Load provider presets failed:', e); }
+}
+
 // ── Toggle password visibility ──
 function toggleVisibility(id) {
   const el = document.getElementById(id);
@@ -496,14 +561,21 @@ async function loadConfig() {
     // Only show placeholder to indicate whether key is configured
     document.getElementById('deepseekKey').placeholder = cfg.deepseek_api_key ? '(已配置，输入新 key 可覆盖)' : 'sk-...';
     document.getElementById('deepseekBase').value = cfg.deepseek_base_url || 'https://api.deepseek.com';
+    document.getElementById('deepseekMode').value = cfg.deepseek_upstream_mode || 'openai';
     document.getElementById('openaiKey').placeholder = cfg.openai_api_key ? '(已配置，输入新 key 可覆盖)' : 'sk-...';
     document.getElementById('openaiBase').value = cfg.openai_base_url || 'https://api.openai.com';
+    document.getElementById('openaiMode').value = cfg.openai_upstream_mode || 'openai';
     document.getElementById('customKey').placeholder = cfg.custom_api_key ? '(已配置，输入新 key 可覆盖)' : 'sk-...';
     document.getElementById('customBase').value = cfg.custom_base_url || '';
+    document.getElementById('customMode').value = cfg.custom_upstream_mode || 'openai';
     document.getElementById('defaultBackend').value = cfg.default_backend || 'deepseek';
     document.getElementById('forceModel').value = cfg.force_model || '';
     document.getElementById('modelListMode').value = cfg.model_list_mode || 'aliases_first';
     document.getElementById('modelAliases').value = JSON.stringify(cfg.model_aliases || [], null, 2);
+    document.getElementById('modelTokenCaps').value = JSON.stringify(cfg.model_token_caps || {}, null, 2);
+    document.getElementById('defaultMaxTokensCap').value = cfg.default_max_tokens_cap || 0;
+    document.getElementById('proxyAuthMode').value = cfg.proxy_auth_mode || 'optional';
+    document.getElementById('proxyAuthToken').placeholder = cfg.proxy_auth_token ? '(已配置，输入新 token 可覆盖)' : '留空关闭';
     document.getElementById('deepseekModelMap').value = JSON.stringify(cfg.deepseek_model_map || {}, null, 2);
     document.getElementById('openaiModelMap').value = JSON.stringify(cfg.openai_model_map || {}, null, 2);
     document.getElementById('customModelMap').value = JSON.stringify(cfg.custom_model_map || {}, null, 2);
@@ -528,18 +600,53 @@ function updateProviderStatus(cfg) {
   cu.style.color = cfg.custom_api_key && cfg.custom_base_url ? 'var(--green)' : 'var(--yellow)';
 }
 
+async function applyProviderPreset() {
+  const id = document.getElementById('providerPreset').value;
+  const preset = providerPresets[id];
+  if (!preset) { toast('请选择 Provider 预设', 'error'); return; }
+
+  const proxyAuthToken = document.getElementById('proxyAuthToken').value;
+  const body = {
+    default_backend: preset.backend,
+    force_model: preset.default_model || '',
+    model_aliases: preset.model_aliases || [],
+    model_list_mode: 'aliases',
+  };
+  if (preset.backend === 'deepseek') {
+    body.deepseek_base_url = preset.base_url;
+    body.deepseek_upstream_mode = preset.upstream_mode || 'openai';
+  } else if (preset.backend === 'openai') {
+    body.openai_base_url = preset.base_url;
+    body.openai_upstream_mode = preset.upstream_mode || 'openai';
+  } else {
+    body.custom_base_url = preset.base_url;
+    body.custom_upstream_mode = preset.upstream_mode || 'openai';
+  }
+
+  const res = await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
+  if (res.ok) {
+    toast('Provider 预设已应用', 'success');
+    loadConfig();
+  } else {
+    toast('应用预设失败: ' + (res.error || ''), 'error');
+  }
+}
+
 // ── Save provider ──
 async function saveProvider(provider) {
   const body = {};
   if (provider === 'deepseek') {
     body.deepseek_api_key = document.getElementById('deepseekKey').value;
     body.deepseek_base_url = document.getElementById('deepseekBase').value;
+    body.deepseek_upstream_mode = document.getElementById('deepseekMode').value;
   } else if (provider === 'openai') {
     body.openai_api_key = document.getElementById('openaiKey').value;
     body.openai_base_url = document.getElementById('openaiBase').value;
+    body.openai_upstream_mode = document.getElementById('openaiMode').value;
   } else {
     body.custom_api_key = document.getElementById('customKey').value;
     body.custom_base_url = document.getElementById('customBase').value;
+    body.custom_upstream_mode = document.getElementById('customMode').value;
   }
   const res = await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
   if (res.ok) {
@@ -552,8 +659,9 @@ async function saveProvider(provider) {
 
 // ── Save routing ──
 async function saveRouting() {
-  let dsMap = {}, oaMap = {}, customMap = {}, modelAliases = [];
+  let dsMap = {}, oaMap = {}, customMap = {}, modelAliases = [], modelTokenCaps = {};
   try { modelAliases = JSON.parse(document.getElementById('modelAliases').value || '[]'); } catch(e) { toast('第三方模型别名 JSON 格式错误', 'error'); return; }
+  try { modelTokenCaps = JSON.parse(document.getElementById('modelTokenCaps').value || '{}'); } catch(e) { toast('max_tokens 上限 JSON 格式错误', 'error'); return; }
   try { dsMap = JSON.parse(document.getElementById('deepseekModelMap').value || '{}'); } catch(e) { toast('DeepSeek 映射 JSON 格式错误', 'error'); return; }
   try { oaMap = JSON.parse(document.getElementById('openaiModelMap').value || '{}'); } catch(e) { toast('OpenAI 映射 JSON 格式错误', 'error'); return; }
   try { customMap = JSON.parse(document.getElementById('customModelMap').value || '{}'); } catch(e) { toast('Custom 映射 JSON 格式错误', 'error'); return; }
@@ -563,6 +671,12 @@ async function saveRouting() {
     force_model: document.getElementById('forceModel').value,
     model_list_mode: document.getElementById('modelListMode').value,
     model_aliases: modelAliases,
+    model_token_caps: modelTokenCaps,
+    default_max_tokens_cap: Number(document.getElementById('defaultMaxTokensCap').value || 0),
+    proxy_auth_mode: document.getElementById('proxyAuthMode').value,
+    deepseek_upstream_mode: document.getElementById('deepseekMode').value,
+    openai_upstream_mode: document.getElementById('openaiMode').value,
+    custom_upstream_mode: document.getElementById('customMode').value,
     deepseek_model_map: dsMap,
     openai_model_map: oaMap,
     custom_model_map: customMap,
@@ -572,6 +686,7 @@ async function saveRouting() {
     reasoning_content_policy: document.getElementById('reasoningPolicy').value,
     inline_image_policy: document.getElementById('inlineImagePolicy').value,
   };
+  if (proxyAuthToken) body.proxy_auth_token = proxyAuthToken;
   const res = await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
   if (res.ok) {
     toast('路由配置已保存，已即时生效', 'success');
@@ -584,12 +699,13 @@ async function saveRouting() {
 async function testBackend(provider) {
   const key = document.getElementById(provider + 'Key').value;
   const base = document.getElementById(provider + 'Base').value;
+  const upstreamMode = document.getElementById(provider + 'Mode').value;
   if (!key) { toast('请先填入 API Key', 'error'); return; }
 
   toast('正在测试连接...', 'info');
   const res = await api('/api/test-backend', {
     method: 'POST',
-    body: JSON.stringify({ provider, api_key: key, base_url: base })
+    body: JSON.stringify({ provider, api_key: key, base_url: base, upstream_mode: upstreamMode })
   });
   if (res.ok) {
     toast(`✅ ${provider === 'deepseek' ? 'DeepSeek' : 'OpenAI'} 连接成功！模型: ${res.models ? res.models.join(', ') : 'OK'}`, 'success');
@@ -663,6 +779,7 @@ async function clearLogs() {
 }
 
 // ── Init ──
+loadProviderPresets();
 loadConfig();
 setInterval(loadConfig, 30000); // Auto-refresh config every 30s
 </script>

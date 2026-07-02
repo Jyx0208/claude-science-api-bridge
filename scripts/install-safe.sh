@@ -8,6 +8,7 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 PROXY_HOST="${PROXY_HOST:-127.0.0.1}"
 PROXY_PORT="${PROXY_PORT:-9876}"
 PROXY_URL="http://$PROXY_HOST:$PROXY_PORT"
+DISPLAY_PROXY_URL="$PROXY_URL"
 
 find_python() {
   if [ -n "${PYTHON:-}" ] && [ -x "$PYTHON" ]; then
@@ -71,6 +72,12 @@ mapping = {
     "DEFAULT_BACKEND": "default_backend",
     "FORCE_MODEL": "force_model",
     "MODEL_LIST_MODE": "model_list_mode",
+    "DEFAULT_MAX_TOKENS_CAP": "default_max_tokens_cap",
+    "DEEPSEEK_UPSTREAM_MODE": "deepseek_upstream_mode",
+    "OPENAI_UPSTREAM_MODE": "openai_upstream_mode",
+    "CUSTOM_UPSTREAM_MODE": "custom_upstream_mode",
+    "PROXY_AUTH_TOKEN": "proxy_auth_token",
+    "PROXY_AUTH_MODE": "proxy_auth_mode",
     "REASONING_CONTENT_POLICY": "reasoning_content_policy",
     "INLINE_IMAGE_POLICY": "inline_image_policy",
 }
@@ -85,6 +92,7 @@ for env_key, config_key in {
     "OPENAI_MODEL_MAP": "openai_model_map",
     "CUSTOM_MODEL_MAP": "custom_model_map",
     "MODEL_ALIASES": "model_aliases",
+    "MODEL_TOKEN_CAPS": "model_token_caps",
 }.items():
     value = os.environ.get(env_key)
     if value:
@@ -97,6 +105,22 @@ if changed:
     secret_count = sum(1 for k in changed if k.endswith("_api_key"))
     print(f"Applied config from environment: {', '.join(safe_changed) or '(only secrets)'}; secrets updated: {secret_count}")
 PY
+
+PROXY_URL="$("$PYTHON_BIN" - "$PROJECT_DIR/config.json" "$PROXY_HOST" "$PROXY_PORT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+cfg = json.loads(Path(sys.argv[1]).read_text())
+url = f"http://{sys.argv[2]}:{sys.argv[3]}"
+token = str(cfg.get("proxy_auth_token") or "").strip()
+mode = str(cfg.get("proxy_auth_mode") or "optional").lower()
+if token and mode == "required":
+    url += "/" + token
+print(url)
+PY
+)"
+DISPLAY_PROXY_URL="$(printf '%s' "$PROXY_URL" | sed -E 's#(://[^/]+/).+#\1****#')"
 
 if [ -f "$HOME/.claude-science/encryption.key" ]; then
   "$PYTHON_BIN" "$PROJECT_DIR/setup-token.py"
@@ -180,5 +204,5 @@ sleep 2
 curl -fsS "$PROXY_URL/health"
 printf '\n'
 echo "Safe install complete."
-echo "Dashboard: $PROXY_URL/dashboard"
+echo "Dashboard: http://$PROXY_HOST:$PROXY_PORT/dashboard"
 echo "Start Claude Science with: $PROJECT_DIR/scripts/start-claude-science.sh"

@@ -76,6 +76,13 @@ def configured(key):
 
 print(f"default_backend={data.get('default_backend', '')}")
 print(f"force_model={data.get('force_model', '')}")
+print(f"model_list_mode={data.get('model_list_mode', '')}")
+print(f"model_aliases={len(data.get('model_aliases') or [])}")
+print(f"deepseek_upstream_mode={data.get('deepseek_upstream_mode', '')}")
+print(f"openai_upstream_mode={data.get('openai_upstream_mode', '')}")
+print(f"custom_upstream_mode={data.get('custom_upstream_mode', '')}")
+print(f"proxy_auth_mode={data.get('proxy_auth_mode', '')}")
+print(f"proxy_auth_token={'yes' if data.get('proxy_auth_token') else 'no'}")
 print(f"deepseek_api_key={configured('deepseek_api_key')}")
 print(f"openai_api_key={configured('openai_api_key')}")
 print(f"custom_api_key={configured('custom_api_key')}")
@@ -95,4 +102,3 @@ printf '\n'
 section "Recent Logs"
 tail -n 40 "$HOME/.claude-science/logs/proxy.log" 2>/dev/null || true
 tail -n 40 "$HOME/.claude-science/logs/proxy-error.log" 2>/dev/null || true
-

@@ -69,6 +69,13 @@ class Config:
         "custom_model_map": {},
         "model_aliases": [],
         "model_list_mode": "aliases_first",
+        "model_token_caps": {},
+        "default_max_tokens_cap": 0,
+        "deepseek_upstream_mode": "openai",
+        "openai_upstream_mode": "openai",
+        "custom_upstream_mode": "openai",
+        "proxy_auth_token": "",
+        "proxy_auth_mode": "optional",
         "deepseek_model_pattern": r"deepseek|deep-seek",
         "openai_model_pattern": r"^(gpt-|o1|o3|o4|chatgpt)",
         "custom_model_pattern": "",
@@ -92,6 +99,13 @@ class Config:
         "custom_model_map": "CUSTOM_MODEL_MAP",
         "model_aliases": "MODEL_ALIASES",
         "model_list_mode": "MODEL_LIST_MODE",
+        "model_token_caps": "MODEL_TOKEN_CAPS",
+        "default_max_tokens_cap": "DEFAULT_MAX_TOKENS_CAP",
+        "deepseek_upstream_mode": "DEEPSEEK_UPSTREAM_MODE",
+        "openai_upstream_mode": "OPENAI_UPSTREAM_MODE",
+        "custom_upstream_mode": "CUSTOM_UPSTREAM_MODE",
+        "proxy_auth_token": "PROXY_AUTH_TOKEN",
+        "proxy_auth_mode": "PROXY_AUTH_MODE",
         "deepseek_model_pattern": "DEEPSEEK_MODEL_PATTERN",
         "openai_model_pattern": "OPENAI_MODEL_PATTERN",
         "custom_model_pattern": "CUSTOM_MODEL_PATTERN",
@@ -100,7 +114,7 @@ class Config:
         "proxy_host": "PROXY_HOST",
         "proxy_port": "PROXY_PORT",
     }
-    JSON_KEYS = {"deepseek_model_map", "openai_model_map", "custom_model_map", "model_aliases"}
+    JSON_KEYS = {"deepseek_model_map", "openai_model_map", "custom_model_map", "model_aliases", "model_token_caps"}
 
     def __init__(self):
         self._data = dict(self.DEFAULTS)
@@ -124,7 +138,7 @@ class Config:
             try:
                 if key in self.JSON_KEYS:
                     value = json.loads(value)
-                elif key == "proxy_port":
+                elif key in {"proxy_port", "default_max_tokens_cap"}:
                     value = int(value)
             except Exception:
                 continue
@@ -150,6 +164,9 @@ class Config:
             val = d.get(k, "")
             if val and len(val) > 8:
                 d[k] = val[:4] + "•" * (len(val) - 8) + val[-4:]
+        val = d.get("proxy_auth_token", "")
+        if val and len(val) > 8:
+            d["proxy_auth_token"] = val[:4] + "•" * (len(val) - 8) + val[-4:]
         return d
 
     @property
@@ -178,6 +195,20 @@ class Config:
     def model_aliases(self) -> list: return self._data["model_aliases"]
     @property
     def model_list_mode(self) -> str: return self._data["model_list_mode"]
+    @property
+    def model_token_caps(self) -> dict: return self._data["model_token_caps"]
+    @property
+    def default_max_tokens_cap(self) -> int: return int(self._data.get("default_max_tokens_cap") or 0)
+    @property
+    def deepseek_upstream_mode(self) -> str: return self._data["deepseek_upstream_mode"]
+    @property
+    def openai_upstream_mode(self) -> str: return self._data["openai_upstream_mode"]
+    @property
+    def custom_upstream_mode(self) -> str: return self._data["custom_upstream_mode"]
+    @property
+    def proxy_auth_token(self) -> str: return self._data["proxy_auth_token"]
+    @property
+    def proxy_auth_mode(self) -> str: return self._data["proxy_auth_mode"]
     @property
     def deepseek_model_pattern(self) -> str: return self._data["deepseek_model_pattern"]
     @property
@@ -220,15 +251,18 @@ class Config:
 
         if backend == "deepseek":
             api_key = self.deepseek_api_key
-            base_url = normalize_openai_base_url(self.deepseek_base_url)
+            mode = normalize_upstream_mode(self.deepseek_upstream_mode)
+            base_url = normalize_backend_base_url(self.deepseek_base_url, mode)
             mapped_model = alias_model or self.force_model or self.deepseek_model_map.get(model, model)
         elif backend == "openai":
             api_key = self.openai_api_key
-            base_url = normalize_openai_base_url(self.openai_base_url)
+            mode = normalize_upstream_mode(self.openai_upstream_mode)
+            base_url = normalize_backend_base_url(self.openai_base_url, mode)
             mapped_model = alias_model or self.force_model or self.openai_model_map.get(model, model)
         elif backend == "custom":
             api_key = self.custom_api_key
-            base_url = normalize_openai_base_url(self.custom_base_url)
+            mode = normalize_upstream_mode(self.custom_upstream_mode)
+            base_url = normalize_backend_base_url(self.custom_base_url, mode)
             mapped_model = alias_model or self.force_model or self.custom_model_map.get(model, model)
         else:
             raise ValueError(f"Unsupported backend '{backend}'. Use deepseek, openai, or custom.")
@@ -244,6 +278,7 @@ class Config:
             "model": mapped_model,
             "api_key": api_key,
             "base_url": base_url,
+            "mode": mode,
         }
 
     def get_model_alias(self, model: str) -> Optional[dict]:
@@ -264,6 +299,133 @@ def normalize_openai_base_url(base_url: str) -> str:
     if not cleaned:
         return ""
     return cleaned if cleaned.endswith("/v1") else cleaned + "/v1"
+
+
+def normalize_upstream_mode(mode: str) -> str:
+    mode = (mode or "openai").strip().lower()
+    return "anthropic" if mode in {"anthropic", "native", "passthrough"} else "openai"
+
+
+def normalize_anthropic_base_url(base_url: str) -> str:
+    """Return an Anthropic Messages-compatible /v1 base URL."""
+    cleaned = (base_url or "").rstrip("/")
+    if not cleaned:
+        return ""
+    if cleaned.endswith("/v1"):
+        return cleaned
+    if cleaned.endswith("/anthropic"):
+        return cleaned + "/v1"
+    if "api.deepseek.com" in cleaned and "/anthropic" not in cleaned:
+        return cleaned + "/anthropic/v1"
+    return cleaned + "/v1"
+
+
+def normalize_backend_base_url(base_url: str, mode: str) -> str:
+    if normalize_upstream_mode(mode) == "anthropic":
+        return normalize_anthropic_base_url(base_url)
+    return normalize_openai_base_url(base_url)
+
+
+def clamp_max_tokens_for_model(value, model: str) -> int:
+    """Clamp max_tokens only when a per-model or default cap is configured."""
+    try:
+        requested = int(value)
+    except (TypeError, ValueError):
+        return value
+    caps = config.model_token_caps if isinstance(config.model_token_caps, dict) else {}
+    cap_value = caps.get(model) or caps.get(str(model).lower()) or config.default_max_tokens_cap
+    try:
+        cap = int(cap_value)
+    except (TypeError, ValueError):
+        cap = 0
+    if cap > 0:
+        return min(requested, cap)
+    return requested
+
+
+def build_anthropic_backend_body(body: dict, backend_model: str) -> dict:
+    """Prepare a native Anthropic request for providers with /v1/messages support."""
+    out = dict(body)
+    out["model"] = backend_model
+    if "max_tokens" in out:
+        out["max_tokens"] = clamp_max_tokens_for_model(out["max_tokens"], backend_model)
+    return out
+
+
+def anthropic_backend_headers(api_key: str) -> dict:
+    return {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+
+
+def proxy_base_url(include_required_secret: bool = True) -> str:
+    url = f"http://{config.proxy_host}:{config.proxy_port}"
+    token = config.proxy_auth_token.strip()
+    if include_required_secret and token and (config.proxy_auth_mode or "optional").lower() == "required":
+        url += "/" + token
+    return url
+
+
+def mask_proxy_url(url: str) -> str:
+    return re.sub(r"(://[^/]+/).+", r"\1****", url)
+
+
+PROVIDER_PRESETS = {
+    "deepseek_openai": {
+        "label": "DeepSeek OpenAI-compatible",
+        "backend": "deepseek",
+        "base_url": "https://api.deepseek.com",
+        "upstream_mode": "openai",
+        "default_model": "deepseek-chat",
+        "model_aliases": [
+            {"id": "byok-model-0001", "display_name": "DeepSeek Chat", "backend": "deepseek", "model": "deepseek-chat"},
+            {"id": "byok-model-0002", "display_name": "DeepSeek Reason", "backend": "deepseek", "model": "deepseek-reasoner"},
+        ],
+    },
+    "deepseek_anthropic": {
+        "label": "DeepSeek native Anthropic",
+        "backend": "deepseek",
+        "base_url": "https://api.deepseek.com/anthropic",
+        "upstream_mode": "anthropic",
+        "default_model": "deepseek-chat",
+        "model_aliases": [
+            {"id": "byok-model-0001", "display_name": "DeepSeek Native", "backend": "deepseek", "model": "deepseek-chat"},
+        ],
+    },
+    "siliconflow_kimi": {
+        "label": "SiliconFlow Kimi",
+        "backend": "custom",
+        "base_url": "https://api.siliconflow.cn",
+        "upstream_mode": "openai",
+        "default_model": "Pro/moonshotai/Kimi-K2.6",
+        "model_aliases": [
+            {"id": "byok-model-0001", "display_name": "Kimi K2.6 Pro++", "backend": "custom", "model": "Pro/moonshotai/Kimi-K2.6"},
+        ],
+    },
+    "dashscope_qwen": {
+        "label": "Alibaba DashScope Qwen",
+        "backend": "custom",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "upstream_mode": "openai",
+        "default_model": "qwen-plus",
+        "model_aliases": [
+            {"id": "byok-model-0001", "display_name": "Qwen Plus", "backend": "custom", "model": "qwen-plus"},
+            {"id": "byok-model-0002", "display_name": "Qwen Max", "backend": "custom", "model": "qwen-max"},
+        ],
+    },
+    "moonshot_anthropic": {
+        "label": "Moonshot native Anthropic",
+        "backend": "custom",
+        "base_url": "https://api.moonshot.cn/anthropic",
+        "upstream_mode": "anthropic",
+        "default_model": "kimi-k2-0711-preview",
+        "model_aliases": [
+            {"id": "byok-model-0001", "display_name": "Moonshot Kimi", "backend": "custom", "model": "kimi-k2-0711-preview"},
+        ],
+    },
+}
 
 
 BUILTIN_COMPAT_MODELS = [
@@ -350,8 +512,15 @@ def log_request(backend: str, model: str, stream: bool, status: str):
         request_log.pop(0)
 
 
+def redact_proxy_auth_path(path: str) -> str:
+    token = config.proxy_auth_token.strip()
+    if token and (path == f"/{token}" or path.startswith(f"/{token}/")):
+        return "/****" + path[len(token) + 1:]
+    return path
+
+
 def log_local_event(request: Request, status_code: int):
-    path = request.url.path
+    path = redact_proxy_auth_path(request.url.path)
     if path.startswith("/static") or path in {"/dashboard", "/favicon.ico"}:
         return
     host = request.headers.get("host", "")
@@ -392,6 +561,19 @@ class NormalizePathMiddleware(BaseHTTPMiddleware):
         # Skip static files and dashboard
         if path.startswith("/static") or path in self.PASSTHROUGH or path.startswith("/api"):
             return await call_next(request)
+
+        token = config.proxy_auth_token.strip()
+        auth_mode = (config.proxy_auth_mode or "optional").lower()
+        if token:
+            prefix = "/" + token
+            if path == prefix or path.startswith(prefix + "/"):
+                path = path[len(prefix):] or "/"
+            elif auth_mode == "required":
+                return JSONResponse(
+                    {"type": "error", "error": {"type": "permission_error", "message": "forbidden"}},
+                    status_code=403,
+                    headers={"Connection": "close"},
+                )
 
         while "/v1/v1/" in path:
             path = path.replace("/v1/v1/", "/v1/", 1)
@@ -1106,6 +1288,7 @@ def anthropic_to_openai(
     openai_body = {"model": backend_model, "messages": openai_messages}
 
     max_tokens = anthropic_body.get("max_tokens", 4096)
+    max_tokens = clamp_max_tokens_for_model(max_tokens, backend_model)
     openai_body["max_tokens"] = max_tokens
 
     if "temperature" in anthropic_body:
@@ -1479,6 +1662,60 @@ async def messages_api(request: Request):
     stream = body.get("stream", False)
     request_id = f"msg_{uuid.uuid4().hex[:16]}"
     tool_name_lookup = build_tool_name_lookup(body)
+
+    if backend["mode"] == "anthropic":
+        native_body = build_anthropic_backend_body(body, backend["model"])
+        headers = anthropic_backend_headers(backend["api_key"])
+        client = get_client()
+        url = f"{backend['base_url']}/messages"
+        print(f"[proxy] → {backend['backend']} native Anthropic | model={backend['model']} | "
+              f"stream={stream} | original_model={original_model}")
+
+        if stream:
+            async def native_stream_gen():
+                try:
+                    async with client.stream("POST", url, json=native_body, headers=headers) as backend_resp:
+                        if backend_resp.status_code != 200:
+                            try:
+                                error_text = (await backend_resp.aread()).decode("utf-8", errors="replace")[:500]
+                            except Exception:
+                                error_text = "(unreadable response)"
+                            print(f"[proxy] native backend error {backend_resp.status_code}: {error_text}", flush=True)
+                            log_request(backend["backend"], backend["model"], True, f"error {backend_resp.status_code}")
+                            err_msg = f"Backend error {backend_resp.status_code}: {error_text}"
+                            safe_msg = err_msg.encode("ascii", errors="replace").decode("ascii")
+                            yield f"event: error\ndata: {json.dumps({'type':'error','error':{'type':'api_error','message':safe_msg}})}\n\n"
+                            return
+                        log_request(backend["backend"], backend["model"], True, "success")
+                        async for chunk in backend_resp.aiter_bytes():
+                            if chunk:
+                                yield chunk
+                except Exception as e:
+                    log_request(backend["backend"], backend["model"], True, "error")
+                    safe_msg = str(e).encode("ascii", errors="replace").decode("ascii")
+                    yield f"event: error\ndata: {json.dumps({'type':'error','error':{'type':'api_error','message':safe_msg}})}\n\n"
+
+            return StreamingResponse(native_stream_gen(), media_type="text/event-stream",
+                                     headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
+
+        try:
+            resp = await client.post(url, json=native_body, headers=headers)
+            if resp.status_code != 200:
+                err_text = resp.text[:500] if resp.text else "(empty)"
+                print(f"[proxy] native backend error {resp.status_code}: {err_text}", flush=True)
+                log_request(backend["backend"], backend["model"], False, f"error {resp.status_code}")
+                safe_msg = f"Backend returned {resp.status_code}: {err_text}".encode("ascii", errors="replace").decode("ascii")
+                return JSONResponse({"type": "error", "error": {"type": "api_error", "message": safe_msg}}, status_code=resp.status_code)
+            log_request(backend["backend"], backend["model"], False, "success")
+            data = resp.json()
+            if isinstance(data, dict) and data.get("type") == "message":
+                data["model"] = original_model
+            return JSONResponse(data)
+        except Exception as e:
+            log_request(backend["backend"], backend["model"], False, "error")
+            safe_msg = str(e).encode("ascii", errors="replace").decode("ascii")
+            return JSONResponse({"type": "error", "error": {"type": "api_error", "message": safe_msg}}, status_code=502)
+
     openai_body = anthropic_to_openai(body, backend["model"], backend["backend"], backend["base_url"])
 
     print(f"[proxy] → {backend['backend']} | model={backend['model']} | "
@@ -1722,6 +1959,9 @@ async def api_update_config(request: Request):
         "default_backend", "force_model",
         "deepseek_model_map", "openai_model_map", "custom_model_map",
         "model_aliases", "model_list_mode",
+        "model_token_caps", "default_max_tokens_cap",
+        "deepseek_upstream_mode", "openai_upstream_mode", "custom_upstream_mode",
+        "proxy_auth_token", "proxy_auth_mode",
         "deepseek_model_pattern", "openai_model_pattern", "custom_model_pattern",
         "reasoning_content_policy", "inline_image_policy",
     }
@@ -1730,10 +1970,17 @@ async def api_update_config(request: Request):
     for key in ("deepseek_api_key", "openai_api_key", "custom_api_key"):
         if key in update_data and "•" in update_data[key]:
             del update_data[key]  # Skip masked placeholder
+    if "proxy_auth_token" in update_data and "•" in str(update_data["proxy_auth_token"]):
+        del update_data["proxy_auth_token"]
     if update_data:
         config.update(update_data)
         return {"ok": True}
     return {"ok": False, "error": "No valid config keys provided"}
+
+
+@app.get("/api/provider-presets")
+async def api_provider_presets():
+    return {"presets": PROVIDER_PRESETS}
 
 
 @app.post("/api/test-backend")
@@ -1745,22 +1992,34 @@ async def api_test_backend(request: Request):
     provider = body.get("provider", "deepseek")
     api_key = body.get("api_key", "")
     base_url = body.get("base_url", "")
+    upstream_mode = normalize_upstream_mode(body.get("upstream_mode", "openai"))
 
     if not api_key:
         return {"ok": False, "error": "API key is required"}
 
-    if base_url:
+    if upstream_mode == "anthropic":
+        if base_url:
+            url = f"{normalize_anthropic_base_url(base_url)}/models"
+        elif provider == "deepseek":
+            url = "https://api.deepseek.com/anthropic/v1/models"
+        else:
+            return {"ok": False, "error": "Anthropic mode requires an API Base URL"}
+        headers = anthropic_backend_headers(api_key)
+    elif base_url:
         url = f"{normalize_openai_base_url(base_url)}/models"
+        headers = {"Authorization": f"Bearer {api_key}"}
     elif provider == "deepseek":
         url = "https://api.deepseek.com/v1/models"
+        headers = {"Authorization": f"Bearer {api_key}"}
     elif provider == "openai":
         url = "https://api.openai.com/v1/models"
+        headers = {"Authorization": f"Bearer {api_key}"}
     else:
         return {"ok": False, "error": "Custom provider requires an API Base URL"}
 
     try:
         async with httpx.AsyncClient(timeout=10, trust_env=False) as c:
-            resp = await c.get(url, headers={"Authorization": f"Bearer {api_key}"})
+            resp = await c.get(url, headers=headers)
             if resp.status_code == 200:
                 data = resp.json()
                 models = [m.get("id", "") for m in data.get("data", [])[:10]]
@@ -1774,13 +2033,13 @@ async def api_test_backend(request: Request):
 @app.post("/api/setup-global-env")
 async def api_setup_global_env():
     """Set ANTHROPIC_BASE_URL globally on macOS via launchctl."""
-    proxy_url = f"http://{config.proxy_host}:{config.proxy_port}"
+    proxy_url = proxy_base_url()
     try:
         subprocess.run(
             ["launchctl", "setenv", "ANTHROPIC_BASE_URL", proxy_url],
             capture_output=True, text=True, timeout=5,
         )
-        return {"ok": True, "proxy_url": proxy_url}
+        return {"ok": True, "proxy_url": mask_proxy_url(proxy_url)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -1792,7 +2051,7 @@ async def api_install_service():
     plist_dir = Path.home() / "Library" / "LaunchAgents"
     plist_path = plist_dir / plist_name
 
-    proxy_url = f"http://{config.proxy_host}:{config.proxy_port}"
+    proxy_url = proxy_base_url()
 
     python_dir = str(Path(sys.executable).parent)
     plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -1946,6 +2205,13 @@ async def health():
         "force_model": config.force_model or "(none)",
         "model_list_mode": config.model_list_mode,
         "model_aliases": len(normalized_model_aliases(config.model_aliases)),
+        "upstream_modes": {
+            "deepseek": normalize_upstream_mode(config.deepseek_upstream_mode),
+            "openai": normalize_upstream_mode(config.openai_upstream_mode),
+            "custom": normalize_upstream_mode(config.custom_upstream_mode),
+        },
+        "proxy_auth_mode": config.proxy_auth_mode,
+        "proxy_auth_configured": bool(config.proxy_auth_token),
         "inline_image_policy": config.inline_image_policy,
         "proxy_dir": str(PROXY_DIR),
     }

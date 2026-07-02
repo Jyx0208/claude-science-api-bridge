@@ -91,6 +91,42 @@ def test_model_alias_routes_to_configured_backend_model_even_with_force_model():
     assert backend["backend"] == "custom"
     assert backend["model"] == "Pro/moonshotai/Kimi-K2.6"
     assert backend["base_url"] == "https://api.siliconflow.cn/v1"
+    assert backend["mode"] == "openai"
+
+
+def test_deepseek_native_anthropic_mode_normalizes_base_url():
+    with config_values(
+        default_backend="deepseek",
+        deepseek_api_key="test-key",
+        deepseek_base_url="https://api.deepseek.com",
+        deepseek_upstream_mode="anthropic",
+        force_model="deepseek-chat",
+    ):
+        backend = proxy.config.resolve_backend("claude-sonnet-4-5")
+
+    assert backend["backend"] == "deepseek"
+    assert backend["mode"] == "anthropic"
+    assert backend["base_url"] == "https://api.deepseek.com/anthropic/v1"
+    assert backend["model"] == "deepseek-chat"
+
+
+def test_max_tokens_cap_applies_to_openai_translation_and_native_body():
+    body = {
+        "model": "byok-model-0001",
+        "max_tokens": 100000,
+        "messages": [{"role": "user", "content": "hi"}],
+    }
+    with config_values(model_token_caps={"Pro/moonshotai/Kimi-K2.6": 8192}, default_max_tokens_cap=0):
+        converted = proxy.anthropic_to_openai(
+            body,
+            "Pro/moonshotai/Kimi-K2.6",
+            "custom",
+            "https://api.siliconflow.cn/v1",
+        )
+        native = proxy.build_anthropic_backend_body(body, "Pro/moonshotai/Kimi-K2.6")
+
+    assert converted["max_tokens"] == 8192
+    assert native["max_tokens"] == 8192
 
 
 def test_models_endpoint_can_return_only_third_party_aliases():
@@ -113,6 +149,31 @@ def test_models_endpoint_can_return_only_third_party_aliases():
         "type": "model",
         "display_name": "Kimi K2.6 Pro++",
     }]
+
+
+def test_provider_presets_include_protocol_modes():
+    client = TestClient(proxy.app)
+    response = client.get("/api/provider-presets")
+
+    assert response.status_code == 200
+    presets = response.json()["presets"]
+    assert presets["siliconflow_kimi"]["upstream_mode"] == "openai"
+    assert presets["deepseek_anthropic"]["upstream_mode"] == "anthropic"
+
+
+def test_required_path_secret_protects_v1_and_does_not_log_secret():
+    client = TestClient(proxy.app)
+    proxy.request_log.clear()
+    with config_values(proxy_auth_token="secret-test-token", proxy_auth_mode="required"):
+        denied = client.get("/v1/models")
+        allowed = client.get("/secret-test-token/v1/models")
+
+    assert denied.status_code == 403
+    assert denied.headers.get("connection") == "close"
+    assert allowed.status_code == 200
+    logs = json.dumps(proxy.request_log, ensure_ascii=False)
+    assert "secret-test-token" not in logs
+    assert "/v1/models" in logs
 
 
 def test_siliconflow_forced_tool_choice_is_downgraded_to_auto():

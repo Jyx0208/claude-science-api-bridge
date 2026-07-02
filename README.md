@@ -14,6 +14,9 @@
 - 自动生成 Claude Science 可接受的本地 fake OAuth token
 - 支持第三方模型别名，让 Claude Science 模型选择里显示 Kimi、Qwen、GPT 等真实后端模型名
 - 可安全补丁本地 daemon 复制件，把硬编码的 Opus/Sonnet 菜单替换成 BYOK 模型菜单
+- 支持 Provider 预设、OpenAI 兼容翻译与 Anthropic 原生透传两种上游模式
+- 支持可选 path-secret 本地鉴权，避免本机其他进程随便调用你的第三方 key
+- 支持按模型配置 `max_tokens` 上限，减少第三方 provider 因输出上限报 400
 - 提供 Web 管理面板：`http://127.0.0.1:9876/dashboard`
 - 支持 macOS LaunchAgent 后台运行和开机自启
 - 提供 agent runbook，方便 AI agent 在用户电脑上安全接管配置
@@ -28,6 +31,8 @@
 - `443` 端口
 
 如果 Claude Science 的某些硬编码 HTTPS 请求必须拦截，可以使用高级模式，但需要先阅读 `docs/network-interception.md`，并由用户明确同意。
+
+本项目也吸收了 [CSswitch](https://github.com/SuperJJ007/CSswitch) 的几个安全设计：入站 Claude OAuth/API key 不转发给第三方、Provider 预设、path-secret 本地鉴权、优先使用 provider 的 Anthropic 原生端点。我们的默认模式仍保持兼容：不强制 secret，不默认切换用户已经跑通的 provider。
 
 ## 用户怎么使用
 
@@ -151,6 +156,7 @@ https://github.com/Jyx0208/claude-science-api-bridge
 {
   "custom_api_key": "REDACTED",
   "custom_base_url": "https://provider.example.com",
+  "custom_upstream_mode": "openai",
   "default_backend": "custom",
   "force_model": "provider-model-name",
   "model_aliases": [
@@ -162,6 +168,10 @@ https://github.com/Jyx0208/claude-science-api-bridge
     }
   ],
   "model_list_mode": "aliases",
+  "model_token_caps": {
+    "provider-model-name": 8192
+  },
+  "default_max_tokens_cap": 0,
   "inline_image_policy": "auto"
 }
 ```
@@ -174,6 +184,7 @@ https://github.com/Jyx0208/claude-science-api-bridge
 {
   "custom_api_key": "REDACTED",
   "custom_base_url": "https://api.siliconflow.cn",
+  "custom_upstream_mode": "openai",
   "default_backend": "custom",
   "force_model": "Pro/moonshotai/Kimi-K2.6",
   "model_aliases": [
@@ -191,6 +202,52 @@ https://github.com/Jyx0208/claude-science-api-bridge
 ```
 
 `reasoning_content_policy` 默认应保持 `never`。部分后端会把内部思考、会话恢复记录或执行计划放在 `reasoning_content` 或普通 `content` 前缀里；代理会尽量过滤这些工作记录，避免它们作为普通对话显示。
+
+## 上游协议模式
+
+每个后端都有一个 `*_upstream_mode`：
+
+- `openai`：Claude Science 的 Anthropic 请求先由本代理翻译成 OpenAI Chat Completions，再发给第三方。适合硅基流动 Kimi、DashScope Qwen、OpenAI 兼容聚合器等。
+- `anthropic`：第三方 provider 本身支持 Anthropic Messages API，本代理只替换模型名和鉴权头后透传。工具调用、thinking、流式事件更保真。适合 DeepSeek Anthropic、Moonshot Anthropic、部分 provider 的原生 Claude 兼容端点。
+
+DeepSeek 原生 Anthropic 示例：
+
+```json
+{
+  "deepseek_api_key": "REDACTED",
+  "deepseek_base_url": "https://api.deepseek.com/anthropic",
+  "deepseek_upstream_mode": "anthropic",
+  "default_backend": "deepseek",
+  "force_model": "deepseek-chat"
+}
+```
+
+Dashboard 的「Provider 预设」可以快速套用常见 provider 的 base URL、协议模式、默认模型和模型别名。套用预设不会写入 API key；key 仍需本地配置。
+
+## 本地 Path-Secret
+
+默认 `proxy_auth_mode=optional`，保持旧用法：
+
+```text
+ANTHROPIC_BASE_URL=http://127.0.0.1:9876
+```
+
+如果需要更严格的本机访问控制，可以配置：
+
+```json
+{
+  "proxy_auth_token": "生成一段随机长字符串",
+  "proxy_auth_mode": "required"
+}
+```
+
+之后启动脚本会自动使用：
+
+```text
+ANTHROPIC_BASE_URL=http://127.0.0.1:9876/<secret>
+```
+
+日志和 Dashboard 会对 secret 脱敏；没有 secret 的 `/v1/messages`、`/v1/models` 请求会返回 403。
 
 ## 模型选择显示第三方模型
 

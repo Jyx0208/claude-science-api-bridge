@@ -55,6 +55,13 @@ open http://127.0.0.1:9876/dashboard
 For unattended setup, write `config.json` directly. Never echo secrets into chat logs.
 `scripts/install-safe.sh` also accepts provider settings from environment variables and persists them into ignored `config.json`.
 
+First decide the upstream protocol:
+
+- Use `*_upstream_mode=anthropic` when the provider has a native Anthropic Messages endpoint. This preserves tool calls, thinking, and SSE events best.
+- Use `*_upstream_mode=openai` when the provider only exposes an OpenAI-compatible endpoint. The proxy will translate Anthropic ↔ OpenAI.
+
+Dashboard Provider presets can fill base URL, upstream mode, default model, and model aliases. Presets never fill API keys.
+
 Minimum DeepSeek config:
 
 ```json
@@ -72,6 +79,7 @@ Generic OpenAI-compatible provider:
 {
   "custom_api_key": "REDACTED",
   "custom_base_url": "https://provider.example.com",
+  "custom_upstream_mode": "openai",
   "default_backend": "custom",
   "force_model": "provider-model-name",
   "model_aliases": [
@@ -95,6 +103,7 @@ For SiliconFlow Kimi:
 {
   "custom_api_key": "REDACTED",
   "custom_base_url": "https://api.siliconflow.cn",
+  "custom_upstream_mode": "openai",
   "default_backend": "custom",
   "force_model": "Pro/moonshotai/Kimi-K2.6",
   "model_aliases": [
@@ -111,8 +120,32 @@ For SiliconFlow Kimi:
 }
 ```
 
+DeepSeek native Anthropic:
+
+```json
+{
+  "deepseek_api_key": "REDACTED",
+  "deepseek_base_url": "https://api.deepseek.com/anthropic",
+  "deepseek_upstream_mode": "anthropic",
+  "default_backend": "deepseek",
+  "force_model": "deepseek-chat",
+  "model_list_mode": "aliases"
+}
+```
+
 Use `inline_image_policy=preserve` only when the selected model supports image input. Use `omit` for text-only models.
 Keep `reasoning_content_policy=never` unless the user explicitly asks to debug provider reasoning payloads.
+
+If the provider rejects large `max_tokens`, set caps:
+
+```json
+{
+  "model_token_caps": {
+    "provider-model-name": 8192
+  },
+  "default_max_tokens_cap": 0
+}
+```
 
 ## Phase 2.5: Configure Third-Party Model Menu
 
@@ -133,6 +166,26 @@ Expected:
 
 The model patch only edits `~/.claude-science/bin/claude-science`, not the app bundle in `/Applications`.
 Alias routing has priority over `force_model`, so a selected BYOK alias maps to its own real backend model.
+
+## Phase 2.6: Optional Path-Secret
+
+To reduce local misuse of the user's third-party key, agents may enable path-secret mode:
+
+```json
+{
+  "proxy_auth_token": "REDACTED_RANDOM_SECRET",
+  "proxy_auth_mode": "required"
+}
+```
+
+Then rerun:
+
+```bash
+./scripts/start-claude-science.sh
+```
+
+The script will set `ANTHROPIC_BASE_URL` to `http://127.0.0.1:9876/<secret>` and mask the secret in terminal output.
+Do not enable `required` unless the launch path is updated too; otherwise Claude Science will receive 403 from `/v1/messages`.
 
 ## Phase 3: Verify Proxy
 

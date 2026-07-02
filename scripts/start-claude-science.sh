@@ -7,6 +7,26 @@ PYTHON_BIN="${PYTHON:-python3}"
 PROXY_PORT="${PROXY_PORT:-9876}"
 PROXY_URL="${ANTHROPIC_BASE_URL:-http://127.0.0.1:$PROXY_PORT}"
 
+if [ -f "$PROJECT_DIR/config.json" ] && [ -z "${ANTHROPIC_BASE_URL:-}" ]; then
+  PROXY_URL="$("$PYTHON_BIN" - "$PROJECT_DIR/config.json" "$PROXY_PORT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+cfg = json.loads(Path(sys.argv[1]).read_text())
+host = str(cfg.get("proxy_host") or "127.0.0.1")
+port = str(cfg.get("proxy_port") or sys.argv[2])
+url = f"http://{host}:{port}"
+token = str(cfg.get("proxy_auth_token") or "").strip()
+mode = str(cfg.get("proxy_auth_mode") or "optional").lower()
+if token and mode == "required":
+    url += "/" + token
+print(url)
+PY
+)"
+fi
+DISPLAY_PROXY_URL="$(printf '%s' "$PROXY_URL" | sed -E 's#(://[^/]+/).+#\1****#')"
+
 if [ -f "$HOME/.claude-science/encryption.key" ]; then
   "$PYTHON_BIN" "$PROJECT_DIR/setup-token.py" >/dev/null
 fi
@@ -30,4 +50,4 @@ pkill -f "ClaudeScience" 2>/dev/null || true
 sleep 1
 open -a "Claude Science"
 
-echo "Started Claude Science with ANTHROPIC_BASE_URL=$PROXY_URL"
+echo "Started Claude Science with ANTHROPIC_BASE_URL=$DISPLAY_PROXY_URL"

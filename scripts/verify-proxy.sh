@@ -8,7 +8,27 @@ PYTHON="${PYTHON:-python3}"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-echo "Verifying proxy at $BASE_URL"
+if [ -f "config.json" ]; then
+  BASE_URL="$("$PYTHON" - "config.json" "$PROXY_HOST" "$PROXY_PORT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+cfg = json.loads(Path(sys.argv[1]).read_text())
+host = str(cfg.get("proxy_host") or sys.argv[2])
+port = str(cfg.get("proxy_port") or sys.argv[3])
+url = f"http://{host}:{port}"
+token = str(cfg.get("proxy_auth_token") or "").strip()
+mode = str(cfg.get("proxy_auth_mode") or "optional").lower()
+if token and mode == "required":
+    url += "/" + token
+print(url)
+PY
+)"
+fi
+DISPLAY_BASE_URL="$(printf '%s' "$BASE_URL" | sed -E 's#(://[^/]+/).+#\1****#')"
+
+echo "Verifying proxy at $DISPLAY_BASE_URL"
 
 echo "1. health"
 curl -fsS --max-time 5 "$BASE_URL/health" > "$TMP_DIR/health.json"
