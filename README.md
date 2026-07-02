@@ -164,9 +164,11 @@ https://github.com/Jyx0208/claude-science-api-bridge
   "default_backend": "custom",
   "force_model": "Pro/moonshotai/Kimi-K2.6",
   "inline_image_policy": "preserve",
-  "reasoning_content_policy": "fallback"
+  "reasoning_content_policy": "never"
 }
 ```
+
+`reasoning_content_policy` 默认应保持 `never`。部分后端会把内部思考、会话恢复记录或执行计划放在 `reasoning_content` 或普通 `content` 前缀里；代理会尽量过滤这些工作记录，避免它们作为普通对话显示。
 
 ## 图片 / 读图能力
 

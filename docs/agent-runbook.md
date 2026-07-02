@@ -86,11 +86,12 @@ For SiliconFlow Kimi:
   "default_backend": "custom",
   "force_model": "Pro/moonshotai/Kimi-K2.6",
   "inline_image_policy": "preserve",
-  "reasoning_content_policy": "fallback"
+  "reasoning_content_policy": "never"
 }
 ```
 
 Use `inline_image_policy=preserve` only when the selected model supports image input. Use `omit` for text-only models.
+Keep `reasoning_content_policy=never` unless the user explicitly asks to debug provider reasoning payloads.
 
 ## Phase 3: Verify Proxy
 

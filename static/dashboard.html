@@ -347,8 +347,8 @@
       <div class="form-group">
         <label>reasoning_content 显示策略</label>
         <select id="reasoningPolicy">
-          <option value="fallback">fallback：content 为空时显示 reasoning_content</option>
           <option value="never">never：不显示 reasoning_content</option>
+          <option value="fallback">fallback：content 为空时显示 reasoning_content</option>
           <option value="always">always：有 reasoning_content 时优先显示</option>
         </select>
       </div>
@@ -495,7 +495,7 @@ async function loadConfig() {
     document.getElementById('deepseekPattern').value = cfg.deepseek_model_pattern || 'deepseek|deep-seek';
     document.getElementById('openaiPattern').value = cfg.openai_model_pattern || '^(gpt-|o1|o3|o4|chatgpt)';
     document.getElementById('customPattern').value = cfg.custom_model_pattern || '';
-    document.getElementById('reasoningPolicy').value = cfg.reasoning_content_policy || 'fallback';
+    document.getElementById('reasoningPolicy').value = cfg.reasoning_content_policy || 'never';
     document.getElementById('inlineImagePolicy').value = cfg.inline_image_policy || 'auto';
     updateProviderStatus(cfg);
   } catch(e) { console.error('Load config failed:', e); }

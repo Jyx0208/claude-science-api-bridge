@@ -21,6 +21,16 @@ def image_policy(policy: str):
         proxy.config._data["inline_image_policy"] = old
 
 
+@contextmanager
+def reasoning_policy(policy: str):
+    old = proxy.config._data.get("reasoning_content_policy")
+    proxy.config._data["reasoning_content_policy"] = policy
+    try:
+        yield
+    finally:
+        proxy.config._data["reasoning_content_policy"] = old
+
+
 def test_tool_schema_root_type_is_object():
     body = {
         "model": "claude-sonnet-4-5",
@@ -229,6 +239,62 @@ def test_explicit_preserve_keeps_images_for_vision_backends():
     assert content[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
 
 
+def test_reasoning_content_is_hidden_when_policy_is_never():
+    response = {
+        "choices": [{
+            "message": {
+                "content": "",
+                "reasoning_content": "The user asked to continue. I should inspect files first.",
+            },
+            "finish_reason": "stop",
+        }],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+    }
+
+    with reasoning_policy("never"):
+        converted = proxy.openai_to_anthropic_response(response, "claude-sonnet-4-5", "msg_reason")
+
+    assert converted["content"] == []
+
+
+def test_trace_preamble_before_tool_call_is_hidden():
+    trace = (
+        'The user said "继续" (continue). The session was resumed, which means my Python kernel was reset. '
+        "Files on disk are intact. Let me check what files I have and continue with the GO/KEGG enrichment analysis.\n\n"
+        "I have gseapy installed now. Let me:\n"
+        "1. First check what files are available\n"
+        "2. Run the GO/KEGG enrichment analysis using gseapy\n"
+        "3. Create the enrichment plots\n\n"
+        "用户要求继续分析。会话已恢复，Python内核已重置但文件仍在。让我检查文件并继续GO/KEGG富集分析。"
+    )
+    response = {
+        "choices": [{
+            "message": {
+                "content": trace,
+                "tool_calls": [{
+                    "id": "call_123",
+                    "type": "function",
+                    "function": {"name": "python", "arguments": "{\"code\":\"print(1)\"}"},
+                }],
+            },
+            "finish_reason": "tool_calls",
+        }],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+    }
+
+    converted = proxy.openai_to_anthropic_response(
+        response,
+        "claude-sonnet-4-5",
+        "msg_trace",
+        {"python": "python"},
+    )
+
+    assert len(converted["content"]) == 1
+    assert converted["content"][0]["type"] == "tool_use"
+    assert "The user said" not in json.dumps(converted, ensure_ascii=False)
+    assert "用户要求继续分析" not in json.dumps(converted, ensure_ascii=False)
+
+
 def test_kimi_embedded_tool_call_text_becomes_tool_use_block():
     args = {
         "human_description": "Building PPI network and calculating topology",
@@ -395,3 +461,71 @@ def test_streaming_text_block_stops_before_standard_tool_block_starts():
     )
 
     assert text_stop_pos < tool_start_pos
+
+
+def test_streaming_trace_preamble_before_tool_call_is_hidden():
+    trace = (
+        'The user said "继续" (continue). The session was resumed, which means my Python kernel was reset. '
+        "Files on disk are intact. Let me check what files I have and continue with the GO/KEGG enrichment analysis.\n"
+        "1. First check what files are available\n"
+        "2. Run the GO/KEGG enrichment analysis using gseapy\n"
+        "用户要求继续分析。会话已恢复，Python内核已重置但文件仍在。让我检查文件并继续GO/KEGG富集分析。"
+    )
+    chunks = [
+        {"choices": [{"delta": {"content": trace[:120]}}]},
+        {"choices": [{"delta": {"content": trace[120:]}}]},
+        {
+            "choices": [{
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": "call_123",
+                        "function": {"name": "python", "arguments": "{\"code\":\"print(1)\"}"},
+                    }]
+                }
+            }]
+        },
+        {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]},
+    ]
+
+    async def collect():
+        return [
+            event
+            async for event in proxy.translate_stream(
+                _FakeOpenAIStream(chunks),
+                "claude-sonnet-4-5",
+                "msg_trace_stream",
+                {"python": "python"},
+            )
+        ]
+
+    events = asyncio.run(collect())
+    joined = "".join(events)
+    payloads = _stream_payloads(events)
+    starts = [p for p in payloads if p.get("type") == "content_block_start"]
+
+    assert "The user said" not in joined
+    assert "用户要求继续分析" not in joined
+    assert starts[0]["content_block"]["type"] == "tool_use"
+
+
+def test_streaming_normal_answer_with_tools_available_is_delivered_on_finish():
+    chunks = [
+        {"choices": [{"delta": {"content": "GO enrichment finished."}}]},
+        {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+    ]
+
+    async def collect():
+        return [
+            event
+            async for event in proxy.translate_stream(
+                _FakeOpenAIStream(chunks),
+                "claude-sonnet-4-5",
+                "msg_normal_stream",
+                {"python": "python"},
+            )
+        ]
+
+    joined = "".join(asyncio.run(collect()))
+
+    assert "GO enrichment finished." in joined

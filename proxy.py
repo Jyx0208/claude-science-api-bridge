@@ -69,7 +69,7 @@ class Config:
         "deepseek_model_pattern": r"deepseek|deep-seek",
         "openai_model_pattern": r"^(gpt-|o1|o3|o4|chatgpt)",
         "custom_model_pattern": "",
-        "reasoning_content_policy": "fallback",
+        "reasoning_content_policy": "never",
         "inline_image_policy": "auto",
         "proxy_host": "127.0.0.1",
         "proxy_port": 9876,
@@ -363,6 +363,43 @@ EMBEDDED_TOOL_MARKERS = (
     TOOL_CALL_END,
     TOOL_CALL_ARGUMENT_BEGIN,
 )
+TRACE_LINE_RE = re.compile(
+    r"^\s*(?:"
+    r"The user (?:said|asked|wants|requested)\b|"
+    r"The session (?:was|has been)\b|"
+    r"Files on disk\b|"
+    r"I have .{0,80}\binstalled\b|"
+    r"I (?:need to|should|will|have to)\b|"
+    r"Let me\b|"
+    r"Now let me\b|"
+    r"用户(?:要求|说|想要|让我)|"
+    r"会话(?:已|被|恢复)|"
+    r"我(?:需要|应该|先|将|会)|"
+    r"让我\b"
+    r")",
+    re.IGNORECASE,
+)
+TRACE_NUMBERED_STEP_RE = re.compile(
+    r"^\s*\d+[\.)]\s*(?:"
+    r"(?:First\s+)?(?:check|run|create|load|inspect|verify|continue)\b|"
+    r"(?:先|检查|运行|创建|加载|继续)"
+    r")",
+    re.IGNORECASE,
+)
+TRACE_CUE_RE = re.compile(
+    r"(?:"
+    r"The user (?:said|asked|wants|requested)|"
+    r"session (?:was|has been) resumed|"
+    r"Python kernel was reset|"
+    r"Files on disk are intact|"
+    r"Let me (?:first )?(?:check|run|continue)|"
+    r"用户(?:要求|说|想要|让我)|"
+    r"会话已恢复|"
+    r"内核已重置|"
+    r"让我(?:先|检查|继续)"
+    r")",
+    re.IGNORECASE,
+)
 
 
 def normalize_tool_name(name, fallback: str) -> str:
@@ -529,6 +566,52 @@ def _flushable_text_prefix(text: str) -> tuple[str, str]:
     if max_keep:
         return text[:-max_keep], text[-max_keep:]
     return text, ""
+
+
+def _looks_like_trace_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return True
+    return bool(TRACE_LINE_RE.search(stripped) or TRACE_NUMBERED_STEP_RE.search(stripped))
+
+
+def strip_assistant_trace_text(text: str, *, aggressive: bool = False) -> str:
+    """Remove provider-visible planning traces without touching normal answers.
+
+    Some backends leak assistant scratchpad-style prose in `content`, e.g.
+    "The user said ... Let me check files..." or the same pattern in Chinese.
+    Those are not tool results or final answers, so hide them before returning
+    an Anthropic response to Claude Science.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return text or ""
+
+    cue_hits = len(TRACE_CUE_RE.findall(text[:1600]))
+    if cue_hits == 0:
+        return text.strip()
+
+    lines = text.splitlines()
+    kept = []
+    dropping_leading_trace = True
+    dropped = 0
+    for line in lines:
+        if dropping_leading_trace and _looks_like_trace_line(line):
+            dropped += 1
+            continue
+        dropping_leading_trace = False
+        kept.append(line)
+
+    cleaned = "\n".join(kept).strip()
+
+    # If a tool call follows, pre-tool narration is usually just scratchpad.
+    if aggressive and cue_hits:
+        return cleaned if cleaned and dropped == 0 else ""
+
+    # If the whole message is a compact trace block, suppress it.
+    meaningful_lines = [line for line in lines if line.strip()]
+    if meaningful_lines and dropped >= len(meaningful_lines):
+        return ""
+    return cleaned or text.strip()
 
 
 def _pick_schema_type(value):
@@ -925,12 +1008,17 @@ def openai_to_anthropic_response(
         text_content = normal_content or reasoning_content
     else:
         text_content = normal_content
+    raw_tool_calls = message.get("tool_calls") or []
     text_content, embedded_tool_calls = extract_embedded_tool_calls(text_content, tool_name_lookup)
+    text_content = strip_assistant_trace_text(
+        text_content,
+        aggressive=bool(raw_tool_calls or embedded_tool_calls),
+    )
     if text_content:
         content_blocks.append({"type": "text", "text": text_content})
 
     has_tool_use = False
-    for tc in message.get("tool_calls") or []:
+    for tc in raw_tool_calls:
         func = tc.get("function", {})
         try:
             arguments = json.loads(func.get("arguments", "{}"))
@@ -994,6 +1082,7 @@ async def translate_stream(
     pending_text = ""
     capturing_embedded_tools = False
     embedded_tool_text = ""
+    hold_visible_text = bool(tool_name_lookup)
 
     def ev(t: str, d: dict) -> str:
         return f"event: {t}\ndata: {json.dumps(d)}\n\n"
@@ -1044,22 +1133,30 @@ async def translate_stream(
         if marker_pos >= 0:
             prefix = pending_text[:marker_pos]
             embedded_tool_text = pending_text[marker_pos:]
-            pending_text = ""
+            pending_text = prefix
             capturing_embedded_tools = True
+            if hold_visible_text:
+                return []
             return text_delta_events(prefix)
+
+        if hold_visible_text:
+            return []
 
         flush_text, pending_text = _flushable_text_prefix(pending_text)
         return text_delta_events(flush_text)
 
-    def finalize_pending_text_events() -> tuple[list[str], list[dict]]:
+    def finalize_pending_text_events(*, aggressive: bool = False) -> tuple[list[str], list[dict]]:
         nonlocal pending_text, embedded_tool_text
         events = []
         embedded_calls = []
         if pending_text:
-            events.extend(text_delta_events(pending_text))
+            clean_pending = strip_assistant_trace_text(pending_text, aggressive=aggressive)
+            if clean_pending:
+                events.extend(text_delta_events(clean_pending))
             pending_text = ""
         if embedded_tool_text:
             clean_text, embedded_calls = extract_embedded_tool_calls(embedded_tool_text, tool_name_lookup)
+            clean_text = strip_assistant_trace_text(clean_text, aggressive=aggressive or bool(embedded_calls))
             embedded_tool_text = ""
             if clean_text:
                 events.extend(text_delta_events(clean_text))
@@ -1132,9 +1229,14 @@ async def translate_stream(
             idx = tc_delta.get("index", 0)
             func_delta = tc_delta.get("function", {})
             if idx not in tool_calls_map:
+                final_text_events, embedded_calls = finalize_pending_text_events(aggressive=True)
+                for event in final_text_events:
+                    yield event
                 if content_block_started and not content_block_stopped:
                     yield ev("content_block_stop", {"type": "content_block_stop", "index": content_block_index})
                     content_block_stopped = True
+                for event in embedded_tool_events(embedded_calls):
+                    yield event
                 tool_calls_map[idx] = {
                     "id": tc_delta.get("id", "") or f"toolu_{uuid.uuid4().hex[:12]}",
                     "name": _resolve_response_tool_name(func_delta.get("name", ""), f"tool_{idx}", tool_name_lookup),
@@ -1158,7 +1260,7 @@ async def translate_stream(
                 })
 
         if finish_reason:
-            final_text_events, embedded_calls = finalize_pending_text_events()
+            final_text_events, embedded_calls = finalize_pending_text_events(aggressive=bool(tool_calls_map))
             for event in final_text_events:
                 yield event
             if content_block_started and not content_block_stopped:
@@ -1177,7 +1279,7 @@ async def translate_stream(
             break
 
     if message_started and not finish_reason:
-        final_text_events, embedded_calls = finalize_pending_text_events()
+        final_text_events, embedded_calls = finalize_pending_text_events(aggressive=bool(tool_calls_map))
         for event in final_text_events:
             yield event
         if content_block_started and not content_block_stopped:

@@ -61,17 +61,19 @@ curl -sS http://127.0.0.1:9876/api/recent-requests
 
 Some reasoning models put early tokens in `reasoning_content`. The proxy supports:
 
-- `fallback`: use normal content, or reasoning if content is empty.
-- `always`: prepend reasoning content when present.
-- `never`: ignore reasoning content.
+- `never`: ignore reasoning content. This is the default and safest setting.
+- `fallback`: use normal content, or reasoning if content is empty. This may expose provider scratchpad text.
+- `always`: prepend reasoning content when present. Use only for debugging.
 
 Set this in `config.json`:
 
 ```json
 {
-  "reasoning_content_policy": "fallback"
+  "reasoning_content_policy": "never"
 }
 ```
+
+If Claude Science displays text such as `The user said...`, `The session was resumed...`, `Let me check...`, or `用户要求继续分析...`, the backend is leaking scratchpad-style planning in normal content. The proxy strips common trace preambles, especially before tool calls. Restart the proxy and run `./scripts/self-test.sh` to verify the trace-filter tests pass.
 
 ## Image Input Fails
 
