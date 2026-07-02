@@ -19,7 +19,7 @@
   "openai_model_pattern": "^(gpt-|o1|o3|o4|chatgpt)",
   "custom_model_pattern": "",
   "reasoning_content_policy": "fallback",
+  "inline_image_policy": "auto",
   "proxy_host": "127.0.0.1",
   "proxy_port": 9876
 }
-

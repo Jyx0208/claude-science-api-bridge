@@ -200,7 +200,7 @@
     <div class="header-icon">🧪</div>
     <div class="header-info">
       <h1>Claude Science BYOK Proxy</h1>
-      <div class="subtitle">使用 DeepSeek / OpenAI 驱动 Claude Science</div>
+      <div class="subtitle">使用 DeepSeek / OpenAI / Custom API 驱动 Claude Science</div>
     </div>
     <div class="status-badge status-running" id="statusBadge">
       <span class="status-dot"></span>
@@ -352,6 +352,15 @@
           <option value="always">always：有 reasoning_content 时优先显示</option>
         </select>
       </div>
+      <div class="form-group">
+        <label>图片输入策略</label>
+        <select id="inlineImagePolicy">
+          <option value="auto">auto：DeepSeek 省略图片，视觉后端保留图片</option>
+          <option value="preserve">preserve：始终向后端发送图片</option>
+          <option value="omit">omit：始终省略图片</option>
+          <option value="omit_inline">omit_inline：只省略 base64 内联图片</option>
+        </select>
+      </div>
       <button class="btn btn-primary btn-sm" onclick="saveRouting()">💾 保存路由配置</button>
     </div>
   </div>
@@ -487,6 +496,7 @@ async function loadConfig() {
     document.getElementById('openaiPattern').value = cfg.openai_model_pattern || '^(gpt-|o1|o3|o4|chatgpt)';
     document.getElementById('customPattern').value = cfg.custom_model_pattern || '';
     document.getElementById('reasoningPolicy').value = cfg.reasoning_content_policy || 'fallback';
+    document.getElementById('inlineImagePolicy').value = cfg.inline_image_policy || 'auto';
     updateProviderStatus(cfg);
   } catch(e) { console.error('Load config failed:', e); }
 }
@@ -542,6 +552,7 @@ async function saveRouting() {
     openai_model_pattern: document.getElementById('openaiPattern').value,
     custom_model_pattern: document.getElementById('customPattern').value,
     reasoning_content_policy: document.getElementById('reasoningPolicy').value,
+    inline_image_policy: document.getElementById('inlineImagePolicy').value,
   };
   const res = await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
   if (res.ok) {

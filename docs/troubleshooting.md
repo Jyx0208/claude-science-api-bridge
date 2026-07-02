@@ -57,6 +57,32 @@ Set this in `config.json`:
 }
 ```
 
+## Image Input Fails
+
+First check whether the backend model actually supports vision input. Text-only models should use:
+
+```json
+{
+  "inline_image_policy": "omit"
+}
+```
+
+Vision models should use:
+
+```json
+{
+  "inline_image_policy": "preserve"
+}
+```
+
+Then run:
+
+```bash
+VERIFY_IMAGE=1 ./scripts/verify-proxy.sh
+```
+
+For SiliconFlow Kimi, inline PNG/WebP/GIF/HEIC images are converted locally to JPEG data URLs before sending to the provider. Very tiny or malformed images may still be rejected by the provider; test with a normal screenshot or the generated verification image.
+
 ## Port 9876 Is Busy
 
 Find the process:

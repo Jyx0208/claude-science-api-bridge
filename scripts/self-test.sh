@@ -22,10 +22,11 @@ path = Path("$PROJECT_DIR/tests/test_translation.py")
 spec = importlib.util.spec_from_file_location("test_translation", path)
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
-mod.test_tool_schema_root_type_is_object()
-mod.test_tool_results_follow_assistant_tool_calls_immediately()
-print("translation tests passed")
+tests = sorted(name for name in dir(mod) if name.startswith("test_"))
+for name in tests:
+    getattr(mod, name)()
+    print(f"{name} passed")
+print(f"{len(tests)} translation tests passed")
 PY
 
 echo "self-test passed"
-

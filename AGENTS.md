@@ -22,6 +22,7 @@ Only use advanced HTTPS interception after the user explicitly approves it for t
 ## Goal
 
 Make Claude Science usable with DeepSeek, OpenAI, or another OpenAI-compatible API provider.
+If the user needs image understanding, choose a vision-capable backend model and preserve image inputs instead of replacing them with text placeholders.
 
 The safe path is:
 
@@ -29,8 +30,9 @@ The safe path is:
 2. Set `ANTHROPIC_BASE_URL=http://127.0.0.1:9876`.
 3. Generate a local fake Claude Science OAuth token.
 4. Configure an API key and model mapping in `config.json` or the dashboard.
-5. Start or restart Claude Science.
-6. Verify `/v1/models` and `/v1/messages` reach the proxy and the backend succeeds.
+5. Set `inline_image_policy=preserve` or `auto` only when the selected backend supports image input.
+6. Start or restart Claude Science.
+7. Verify `/v1/models` and `/v1/messages` reach the proxy and the backend succeeds.
 
 ## Repository Map
 
@@ -63,6 +65,14 @@ curl -sS http://127.0.0.1:9876/v1/messages \
 ```
 
 And `http://127.0.0.1:9876/api/recent-requests` shows a successful backend request.
+
+For a vision-capable model, also run:
+
+```bash
+VERIFY_IMAGE=1 ./scripts/verify-proxy.sh
+```
+
+This sends a generated red PNG through the Anthropic image format. Do not claim image support is working until this passes.
 
 ## If Blocked
 

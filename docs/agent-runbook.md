@@ -70,11 +70,27 @@ Generic OpenAI-compatible provider:
   "custom_api_key": "REDACTED",
   "custom_base_url": "https://provider.example.com",
   "default_backend": "custom",
-  "force_model": "provider-model-name"
+  "force_model": "provider-model-name",
+  "inline_image_policy": "auto"
 }
 ```
 
 If the provider base URL already includes `/v1`, keep it; the proxy normalizes both forms.
+
+For SiliconFlow Kimi:
+
+```json
+{
+  "custom_api_key": "REDACTED",
+  "custom_base_url": "https://api.siliconflow.cn",
+  "default_backend": "custom",
+  "force_model": "Pro/moonshotai/Kimi-K2.6",
+  "inline_image_policy": "preserve",
+  "reasoning_content_policy": "fallback"
+}
+```
+
+Use `inline_image_policy=preserve` only when the selected model supports image input. Use `omit` for text-only models.
 
 ## Phase 3: Verify Proxy
 
@@ -97,6 +113,20 @@ Expected:
 - `/v1/messages` returns an Anthropic-style message object.
 - `/api/recent-requests` shows backend `success`.
 - `./scripts/verify-proxy.sh` exits with `proxy verification passed`.
+
+If the user asked for image understanding and the selected model is vision-capable, run:
+
+```bash
+VERIFY_IMAGE=1 ./scripts/verify-proxy.sh
+```
+
+Expected:
+
+- The script generates a red PNG.
+- The proxy converts Anthropic image input into OpenAI-compatible image input.
+- The backend response confirms `red`.
+
+Do not report image support as working until this test passes.
 
 ## Phase 4: Start Claude Science
 

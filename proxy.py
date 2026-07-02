@@ -20,8 +20,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import base64
+import shutil
 import subprocess
 import sys
+import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -345,6 +348,7 @@ def get_client() -> httpx.AsyncClient:
 # ---------------------------------------------------------------------------
 
 TOOL_NAME_RE = re.compile(r"[^A-Za-z0-9_-]+")
+DATA_IMAGE_RE = re.compile(r"^data:(image/[^;,]+);base64,(.*)$", re.DOTALL)
 JSON_SCHEMA_TYPES = {"string", "number", "integer", "boolean", "object", "array"}
 SCHEMA_COMBINATORS = ("anyOf", "oneOf", "allOf")
 
@@ -466,6 +470,52 @@ def _is_inline_image_url(url: str) -> bool:
     return isinstance(url, str) and url.startswith("data:")
 
 
+def _siliconflow_needs_jpeg_data_url(backend_name: str, backend_base_url: str) -> bool:
+    return backend_name == "custom" and "siliconflow" in (backend_base_url or "").lower()
+
+
+def _convert_inline_image_to_jpeg_url(url: str, backend_name: str, backend_base_url: str) -> str:
+    """Convert inline data images to JPEG for providers that reject PNG data URLs."""
+    if not (_is_inline_image_url(url) and _siliconflow_needs_jpeg_data_url(backend_name, backend_base_url)):
+        return url
+
+    match = DATA_IMAGE_RE.match(url)
+    if not match:
+        return url
+
+    mime_type = match.group(1).lower()
+    if mime_type in {"image/jpeg", "image/jpg"}:
+        return url
+    if not shutil.which("sips"):
+        return url
+
+    ext = {
+        "image/png": "png",
+        "image/webp": "webp",
+        "image/gif": "gif",
+        "image/heic": "heic",
+        "image/heif": "heif",
+    }.get(mime_type, "img")
+
+    try:
+        raw = base64.b64decode(match.group(2), validate=False)
+        with tempfile.TemporaryDirectory(prefix="claude-science-img-") as td:
+            src_path = Path(td) / f"source.{ext}"
+            dst_path = Path(td) / "converted.jpg"
+            src_path.write_bytes(raw)
+            subprocess.run(
+                ["sips", "-s", "format", "jpeg", str(src_path), "--out", str(dst_path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+                timeout=15,
+            )
+            encoded = base64.b64encode(dst_path.read_bytes()).decode("ascii")
+            return f"data:image/jpeg;base64,{encoded}"
+    except Exception:
+        return url
+
+
 def _openai_image_url_from_anthropic(block: dict) -> Optional[str]:
     if "image_url" in block:
         image_url = block["image_url"]
@@ -489,8 +539,6 @@ def _image_policy_for_backend(backend_name: str, backend_base_url: str) -> str:
         return policy
     if backend_name == "deepseek":
         return "omit"
-    if backend_name == "custom" and "siliconflow" in (backend_base_url or "").lower():
-        return "omit_inline"
     return "preserve"
 
 
@@ -559,6 +607,7 @@ def anthropic_to_openai(
                         if image_policy == "omit" or (image_policy == "omit_inline" and _is_inline_image_url(url)):
                             omitted_images += 1
                         else:
+                            url = _convert_inline_image_to_jpeg_url(url, backend_name, backend_base_url)
                             image_parts.append({"type": "image_url", "image_url": {"url": url}})
                 if image_parts:
                     openai_parts = list(image_parts)

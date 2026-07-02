@@ -71,6 +71,7 @@ mapping = {
     "DEFAULT_BACKEND": "default_backend",
     "FORCE_MODEL": "force_model",
     "REASONING_CONTENT_POLICY": "reasoning_content_policy",
+    "INLINE_IMAGE_POLICY": "inline_image_policy",
 }
 changed = []
 for env_key, config_key in mapping.items():

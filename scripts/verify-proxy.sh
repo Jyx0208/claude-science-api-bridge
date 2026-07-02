@@ -68,4 +68,57 @@ if not success:
 print(f"successful_backend_requests={len(success)}")
 PY
 
+if [ "${VERIFY_IMAGE:-0}" = "1" ]; then
+  echo "5. image message"
+  if ! command -v sips >/dev/null 2>&1; then
+    echo "sips is required for VERIFY_IMAGE=1 on macOS."
+    exit 1
+  fi
+  "$PYTHON" - <<'PY' > "$TMP_DIR/red.ppm"
+w = h = 32
+print(f"P3\n{w} {h}\n255")
+for _ in range(w * h):
+    print("255 0 0")
+PY
+  sips -s format png "$TMP_DIR/red.ppm" --out "$TMP_DIR/red.png" >/dev/null
+  IMG_B64="$(base64 < "$TMP_DIR/red.png" | tr -d '\n')"
+  IMG_B64="$IMG_B64" "$PYTHON" - <<'PY' > "$TMP_DIR/image-request.json"
+import json
+import os
+
+print(json.dumps({
+    "model": "claude-opus-4-8",
+    "max_tokens": 32,
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Look at the image. If the dominant color is red, reply exactly: red. Otherwise reply exactly: no."},
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": os.environ["IMG_B64"]}},
+        ],
+    }],
+}))
+PY
+  STATUS="$(curl -sS --max-time 90 -o "$TMP_DIR/image-message.json" -w "%{http_code}" \
+    "$BASE_URL/v1/messages" \
+    -H 'Content-Type: application/json' \
+    -d @"$TMP_DIR/image-request.json")"
+  if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 300 ]; then
+    echo "Image request failed with HTTP $STATUS"
+    head -c 1000 "$TMP_DIR/image-message.json"
+    echo
+    exit 1
+  fi
+  "$PYTHON" - <<PY
+import json
+import re
+from pathlib import Path
+
+data = json.loads(Path("$TMP_DIR/image-message.json").read_text())
+text = " ".join(part.get("text", "") for part in data.get("content", []) if isinstance(part, dict))
+if not re.search(r"\\b(red)\\b|红|赤", text, re.I):
+    raise SystemExit(f"Image verification did not confirm red. Response: {text[:300]!r}")
+print(f"image_response={text[:120]}")
+PY
+fi
+
 echo "proxy verification passed"
