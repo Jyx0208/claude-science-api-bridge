@@ -37,6 +37,26 @@ The proxy converts these markers into Anthropic `tool_use` blocks in both stream
 
 For SiliconFlow Kimi, forced Anthropic tool choices are sent as OpenAI `auto` because the provider only accepts `auto` and `none`. This avoids backend 400 errors while still allowing the model to call tools.
 
+## Claude Science Shows Connection Issue
+
+Check the local proxy and recent requests first:
+
+```bash
+curl -sS http://127.0.0.1:9876/health
+curl -sS http://127.0.0.1:9876/api/recent-requests
+tail -n 120 ~/.claude-science/logs/proxy.log
+tail -n 120 ~/.claude-science/logs/proxy-error.log
+```
+
+For slow streaming providers, the proxy emits Anthropic-style `ping` events while the upstream stream is idle after `message_start`. This prevents Claude Science from seeing a quiet stream as a dropped connection. The heartbeat interval defaults to 3 seconds and can be adjusted with `STREAM_HEARTBEAT_SECONDS`.
+
+If this message appears repeatedly:
+
+1. Run `./scripts/self-test.sh` and confirm the heartbeat and streaming tests pass.
+2. Run `./scripts/verify-proxy.sh` to confirm normal backend calls still work.
+3. Check whether recent requests show backend errors, timeouts, or only successful slow streams.
+4. Do not modify Clash, DNS, TUN, `/etc/hosts`, system proxy, certificates, or port 443 as a first response.
+
 ## SSL Certificate Verify Failed When Proxy Calls Backend
 
 The proxy uses `trust_env=False` for backend HTTP clients so Claude Science CA variables do not affect DeepSeek/OpenAI TLS. If this error appears, confirm the running process is using the latest `proxy.py`.

@@ -17,6 +17,7 @@ Quick start:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -343,6 +344,28 @@ def get_client() -> httpx.AsyncClient:
     return _client
 
 
+async def read_json_object(request: Request) -> tuple[Optional[dict], Optional[JSONResponse]]:
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        return None, JSONResponse(
+            {"type": "error", "error": {"type": "invalid_request_error", "message": "Request body must be valid JSON."}},
+            status_code=400,
+        )
+    except Exception as e:
+        safe_msg = str(e).encode("ascii", errors="replace").decode("ascii")
+        return None, JSONResponse(
+            {"type": "error", "error": {"type": "invalid_request_error", "message": safe_msg}},
+            status_code=400,
+        )
+    if not isinstance(body, dict):
+        return None, JSONResponse(
+            {"type": "error", "error": {"type": "invalid_request_error", "message": "Request body must be a JSON object."}},
+            status_code=400,
+        )
+    return body, None
+
+
 # ---------------------------------------------------------------------------
 # Request/Response translation: Anthropic <-> OpenAI
 # ---------------------------------------------------------------------------
@@ -351,6 +374,7 @@ TOOL_NAME_RE = re.compile(r"[^A-Za-z0-9_-]+")
 DATA_IMAGE_RE = re.compile(r"^data:(image/[^;,]+);base64,(.*)$", re.DOTALL)
 JSON_SCHEMA_TYPES = {"string", "number", "integer", "boolean", "object", "array"}
 SCHEMA_COMBINATORS = ("anyOf", "oneOf", "allOf")
+STREAM_HEARTBEAT_SECONDS = float(os.environ.get("STREAM_HEARTBEAT_SECONDS", "3"))
 TOOL_CALLS_SECTION_BEGIN = "<|tool_calls_section_begin|>"
 TOOL_CALLS_SECTION_END = "<|tool_calls_section_end|>"
 TOOL_CALL_BEGIN = "<|tool_call_begin|>"
@@ -372,9 +396,11 @@ TRACE_LINE_RE = re.compile(
     r"I (?:need to|should|will|have to)\b|"
     r"Let me\b|"
     r"Now let me\b|"
+    r"Now I (?:will|need to|should|have to)\b|"
     r"用户(?:要求|说|想要|让我)|"
     r"会话(?:已|被|恢复)|"
     r"我(?:需要|应该|先|将|会)|"
+    r"现在让我|"
     r"让我\b"
     r")",
     re.IGNORECASE,
@@ -392,20 +418,58 @@ TRACE_CUE_RE = re.compile(
     r"session (?:was|has been) resumed|"
     r"Python kernel was reset|"
     r"Files on disk are intact|"
+    r"I (?:need to|should|have to)|"
+    r"Let me\b|"
     r"Let me (?:first )?(?:check|run|continue)|"
+    r"Now I (?:will|need to|should|have to)|"
     r"用户(?:要求|说|想要|让我)|"
     r"会话已恢复|"
     r"内核已重置|"
+    r"现在让我|"
     r"让我(?:先|检查|继续)"
     r")",
     re.IGNORECASE,
 )
+TRACE_PROBE_MIN_CHARS = 12
 
 
 def normalize_tool_name(name, fallback: str) -> str:
     """OpenAI-compatible function names are alphanumeric plus _ and -."""
     cleaned = TOOL_NAME_RE.sub("_", str(name or fallback)).strip("_")
     return (cleaned or fallback)[:64]
+
+
+def sse_event(event_type: str, data: dict) -> str:
+    return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+
+
+async def stream_events_with_heartbeat(event_iter, interval: float = STREAM_HEARTBEAT_SECONDS):
+    """Yield SSE events, adding ping heartbeats while an upstream stream is idle."""
+    if interval <= 0:
+        async for event in event_iter:
+            yield event
+        return
+
+    agen = event_iter.__aiter__()
+    task = asyncio.create_task(agen.__anext__())
+    started = False
+    try:
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=interval)
+            if not done:
+                if started:
+                    yield sse_event("ping", {"type": "ping"})
+                continue
+            try:
+                event = task.result()
+            except StopAsyncIteration:
+                break
+            started = True
+            yield event
+            task = asyncio.create_task(agen.__anext__())
+    finally:
+        if not task.done():
+            task.cancel()
 
 
 def build_tool_name_lookup(anthropic_body: dict) -> dict:
@@ -612,6 +676,18 @@ def strip_assistant_trace_text(text: str, *, aggressive: bool = False) -> str:
     if meaningful_lines and dropped >= len(meaningful_lines):
         return ""
     return cleaned or text.strip()
+
+
+def _should_hold_visible_stream_text(text: str) -> bool:
+    """Briefly buffer tool-enabled streams only while the prefix is ambiguous."""
+    if not text:
+        return True
+    probe = text[:1600]
+    if TRACE_CUE_RE.search(probe):
+        return True
+    if len(text) < TRACE_PROBE_MIN_CHARS and not re.search(r"[.!?。！？\n]", text):
+        return True
+    return False
 
 
 def _pick_schema_type(value):
@@ -1121,7 +1197,7 @@ async def translate_stream(
         return events
 
     def buffered_text_events(text_delta: str) -> list[str]:
-        nonlocal pending_text, capturing_embedded_tools, embedded_tool_text
+        nonlocal pending_text, capturing_embedded_tools, embedded_tool_text, hold_visible_text
         if not text_delta:
             return []
         if capturing_embedded_tools:
@@ -1140,7 +1216,9 @@ async def translate_stream(
             return text_delta_events(prefix)
 
         if hold_visible_text:
-            return []
+            if _should_hold_visible_stream_text(pending_text):
+                return []
+            hold_visible_text = False
 
         flush_text, pending_text = _flushable_text_prefix(pending_text)
         return text_delta_events(flush_text)
@@ -1302,7 +1380,9 @@ async def translate_stream(
 
 @app.post("/v1/messages")
 async def messages_api(request: Request):
-    body = await request.json()
+    body, json_error = await read_json_object(request)
+    if json_error:
+        return json_error
     original_model = body.get("model", "claude-sonnet-4-5")
 
     try:
@@ -1338,7 +1418,8 @@ async def messages_api(request: Request):
                         yield f"event: error\ndata: {json.dumps({'type':'error','error':{'type':'api_error','message':safe_msg}})}\n\n"
                         return
                     log_request(backend["backend"], backend["model"], True, "success")
-                    async for event in translate_stream(backend_resp, original_model, request_id, tool_name_lookup):
+                    events = translate_stream(backend_resp, original_model, request_id, tool_name_lookup)
+                    async for event in stream_events_with_heartbeat(events):
                         yield event
             except Exception as e:
                 log_request(backend["backend"], backend["model"], True, "error")
@@ -1365,7 +1446,9 @@ async def messages_api(request: Request):
 
 @app.post("/v1/messages/count_tokens")
 async def count_tokens(request: Request):
-    body = await request.json()
+    body, json_error = await read_json_object(request)
+    if json_error:
+        return json_error
     total_chars = 0
     for msg in body.get("messages", []):
         content = msg.get("content", "")
@@ -1519,7 +1602,9 @@ async def api_get_config():
 
 @app.post("/api/config")
 async def api_update_config(request: Request):
-    body = await request.json()
+    body, json_error = await read_json_object(request)
+    if json_error:
+        return json_error
     allowed_keys = {
         "deepseek_api_key", "openai_api_key", "custom_api_key",
         "deepseek_base_url", "openai_base_url", "custom_base_url",
@@ -1542,7 +1627,9 @@ async def api_update_config(request: Request):
 @app.post("/api/test-backend")
 async def api_test_backend(request: Request):
     """Test connectivity to a backend provider."""
-    body = await request.json()
+    body, json_error = await read_json_object(request)
+    if json_error:
+        return {"ok": False, "error": "Request body must be valid JSON."}
     provider = body.get("provider", "deepseek")
     api_key = body.get("api_key", "")
     base_url = body.get("base_url", "")

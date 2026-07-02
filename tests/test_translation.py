@@ -1,8 +1,14 @@
 import asyncio
 import importlib.util
 import json
+import warnings
 from contextlib import contextmanager
 from pathlib import Path
+
+from starlette.exceptions import StarletteDeprecationWarning
+
+warnings.filterwarnings("ignore", category=StarletteDeprecationWarning)
+from starlette.testclient import TestClient
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -321,12 +327,13 @@ def test_kimi_embedded_tool_call_text_becomes_tool_use_block():
     )
 
     assert converted["stop_reason"] == "tool_use"
-    assert converted["content"][0] == {"type": "text", "text": "现在让我用networkx构建网络。"}
-    tool_block = converted["content"][1]
+    assert len(converted["content"]) == 1
+    tool_block = converted["content"][0]
     assert tool_block["type"] == "tool_use"
     assert tool_block["name"] == "python"
     assert tool_block["input"]["human_description"] == args["human_description"]
     assert "networkx" in tool_block["input"]["code"]
+    assert "现在让我" not in json.dumps(converted, ensure_ascii=False)
     assert "<|tool_call" not in json.dumps(converted, ensure_ascii=False)
 
 
@@ -345,6 +352,20 @@ class _FakeOpenAIStream:
 
     async def aiter_lines(self):
         for chunk in self.chunks:
+            yield "data: " + json.dumps(chunk, ensure_ascii=False)
+        yield "data: [DONE]"
+
+
+class _PausingOpenAIStream:
+    def __init__(self, first_chunk, later_chunks):
+        self.first_chunk = first_chunk
+        self.later_chunks = later_chunks
+        self.release = asyncio.Event()
+
+    async def aiter_lines(self):
+        yield "data: " + json.dumps(self.first_chunk, ensure_ascii=False)
+        await self.release.wait()
+        for chunk in self.later_chunks:
             yield "data: " + json.dumps(chunk, ensure_ascii=False)
         yield "data: [DONE]"
 
@@ -375,6 +396,7 @@ def test_streaming_kimi_embedded_tool_call_is_not_emitted_as_text():
     payloads = _stream_payloads(events)
 
     assert "<|tool_call" not in joined
+    assert "现在让我" not in joined
     assert any(p.get("delta", {}).get("stop_reason") == "tool_use" for p in payloads)
     tool_starts = [
         p for p in payloads
@@ -529,3 +551,65 @@ def test_streaming_normal_answer_with_tools_available_is_delivered_on_finish():
     joined = "".join(asyncio.run(collect()))
 
     assert "GO enrichment finished." in joined
+
+
+def test_streaming_normal_text_with_tools_available_flushes_before_finish():
+    first_chunk = {
+        "choices": [{
+            "delta": {
+                "content": (
+                    "GO enrichment finished successfully. The top biological processes "
+                    "are inflammatory response, apoptosis, and oxidative stress regulation."
+                )
+            }
+        }]
+    }
+    later_chunks = [{"choices": [{"delta": {}, "finish_reason": "stop"}]}]
+
+    async def collect_prefix():
+        stream = _PausingOpenAIStream(first_chunk, later_chunks)
+        agen = proxy.translate_stream(
+            stream,
+            "claude-sonnet-4-5",
+            "msg_no_stall",
+            {"python": "python"},
+        )
+        first = await asyncio.wait_for(agen.__anext__(), timeout=1)
+        second = await asyncio.wait_for(agen.__anext__(), timeout=1)
+        stream.release.set()
+        rest = []
+        async for event in agen:
+            rest.append(event)
+        return [first, second, *rest]
+
+    events = asyncio.run(collect_prefix())
+    payloads = _stream_payloads(events[:2])
+
+    assert payloads[0]["type"] == "message_start"
+    assert payloads[1]["type"] == "content_block_start"
+
+
+def test_streaming_heartbeat_emits_ping_after_message_start_idle():
+    async def idle_events():
+        yield proxy.sse_event("message_start", {"type": "message_start"})
+        await asyncio.Event().wait()
+
+    async def collect():
+        agen = proxy.stream_events_with_heartbeat(idle_events(), interval=0.01)
+        first = await asyncio.wait_for(agen.__anext__(), timeout=1)
+        second = await asyncio.wait_for(agen.__anext__(), timeout=1)
+        await agen.aclose()
+        return [first, second]
+
+    payloads = _stream_payloads(asyncio.run(collect()))
+
+    assert payloads[0]["type"] == "message_start"
+    assert payloads[1]["type"] == "ping"
+
+
+def test_invalid_json_returns_400_without_exception():
+    client = TestClient(proxy.app)
+    response = client.post("/v1/messages", data="", headers={"Content-Type": "application/json"})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["type"] == "invalid_request_error"
