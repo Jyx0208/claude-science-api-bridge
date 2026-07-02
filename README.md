@@ -221,3 +221,6 @@ git status --ignored
 ## 许可证
 
 MIT。见 `LICENSE`。
+
+
+友情链接 https://linux.do/
