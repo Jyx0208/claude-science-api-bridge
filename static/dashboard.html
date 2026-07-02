@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Science BYOK Proxy</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --accent-hover: #79c0ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d2991d;
+    --purple: #a371f7;
+    --radius: 8px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  .container { max-width: 900px; margin: 0 auto; padding: 24px 20px; }
+
+  /* Header */
+  .header {
+    display: flex; align-items: center; gap: 16px; margin-bottom: 28px;
+    padding: 20px; background: var(--surface); border-radius: var(--radius);
+    border: 1px solid var(--border);
+  }
+  .header-icon { font-size: 36px; }
+  .header-info { flex: 1; }
+  .header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+  .header .subtitle { color: var(--text-dim); font-size: 13px; margin-top: 2px; }
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600;
+  }
+  .status-running { background: #1a3a1f; color: var(--green); border: 1px solid #2a5a2f; }
+  .status-stopped { background: #3a1a1a; color: var(--red); border: 1px solid #5a2a2a; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .status-running .status-dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .status-stopped .status-dot { background: var(--red); box-shadow: 0 0 6px var(--red); }
+
+  /* Cards */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px; margin-bottom: 16px;
+  }
+  .card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px;
+  }
+  .card-title .icon { font-size: 18px; }
+
+  /* Form elements */
+  .form-group { margin-bottom: 14px; }
+  .form-group:last-child { margin-bottom: 0; }
+  label {
+    display: block; font-size: 12px; font-weight: 600; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
+  }
+  input[type="text"], input[type="password"], select {
+    width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 13px; font-family: inherit;
+    transition: border-color 0.2s;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(88,166,255,0.15); }
+  select { cursor: pointer; }
+  .input-row { display: flex; gap: 8px; }
+  .input-row input { flex: 1; }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600;
+    cursor: pointer; border: 1px solid transparent; transition: all 0.15s;
+    font-family: inherit; white-space: nowrap;
+  }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-outline { background: transparent; color: var(--text); border-color: var(--border); }
+  .btn-outline:hover { background: rgba(255,255,255,0.05); }
+  .btn-danger { background: transparent; color: var(--red); border-color: var(--red); }
+  .btn-danger:hover { background: rgba(248,81,73,0.1); }
+  .btn-sm { padding: 5px 12px; font-size: 12px; }
+  .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* Toast */
+  .toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; }
+  .toast {
+    padding: 10px 18px; border-radius: 6px; margin-bottom: 8px;
+    font-size: 13px; font-weight: 500; animation: slideIn 0.25s ease;
+    max-width: 360px;
+  }
+  .toast-success { background: #1a3a1f; color: var(--green); border: 1px solid #2a5a2f; }
+  .toast-error { background: #3a1a1a; color: var(--red); border: 1px solid #5a2a2a; }
+  .toast-info { background: #1a2035; color: var(--accent); border: 1px solid #2a3055; }
+  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  /* Request log */
+  .log-list { max-height: 250px; overflow-y: auto; }
+  .log-entry {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 10px; border-radius: 4px; font-size: 12px;
+    font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+    border-bottom: 1px solid rgba(48,54,61,0.5);
+  }
+  .log-entry:last-child { border-bottom: none; }
+  .log-time { color: var(--text-dim); min-width: 70px; }
+  .log-backend { font-weight: 600; min-width: 70px; }
+  .log-backend.deepseek { color: #58a6ff; }
+  .log-backend.openai { color: #3fb950; }
+  .log-backend.custom { color: #d29922; }
+  .log-model { color: var(--text-dim); flex: 1; }
+  .log-status { min-width: 40px; text-align: right; }
+  .log-status.success { color: var(--green); }
+  .log-status.error { color: var(--red); }
+  .log-empty { color: var(--text-dim); text-align: center; padding: 30px; font-size: 13px; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+  .tab {
+    padding: 8px 16px; font-size: 13px; font-weight: 500; cursor: pointer;
+    color: var(--text-dim); border-bottom: 2px solid transparent;
+    transition: all 0.15s; background: none; border-top: none; border-left: none; border-right: none;
+    font-family: inherit;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* Command block */
+  .cmd-block {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px 16px; font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+    font-size: 12px; position: relative; margin: 8px 0;
+    word-break: break-all;
+  }
+  .cmd-block .copy-btn {
+    position: absolute; top: 8px; right: 8px;
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text-dim); padding: 3px 8px; border-radius: 4px;
+    cursor: pointer; font-size: 11px;
+  }
+  .cmd-block .copy-btn:hover { color: var(--text); background: var(--border); }
+
+  /* Provider badges */
+  .provider-tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600;
+    border: 1px solid;
+  }
+  .provider-deepseek { color: #58a6ff; border-color: #1a3a5a; background: #0d1f33; }
+  .provider-openai { color: #3fb950; border-color: #1a3a2a; background: #0d1f13; }
+  .provider-custom { color: #d29922; border-color: #4a350c; background: #211805; }
+
+  /* Collapsible */
+  .collapsible-header {
+    cursor: pointer; display: flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 600; padding: 8px 0;
+  }
+  .collapsible-header .arrow { transition: transform 0.2s; font-size: 10px; }
+  .collapsible.open .collapsible-header .arrow { transform: rotate(90deg); }
+  .collapsible-body { display: none; }
+  .collapsible.open .collapsible-body { display: block; }
+
+  /* Setup steps */
+  .setup-steps { counter-reset: step; }
+  .setup-step {
+    display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid rgba(48,54,61,0.3);
+    counter-increment: step;
+  }
+  .setup-step:last-child { border-bottom: none; }
+  .step-num {
+    width: 26px; height: 26px; border-radius: 50%; background: var(--accent);
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 1px;
+  }
+  .step-content { flex: 1; }
+  .step-content h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .step-content p { font-size: 12px; color: var(--text-dim); }
+</style>
+</head>
+<body>
+<div class="toast-container" id="toastContainer"></div>
+
+<div class="container">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-icon">🧪</div>
+    <div class="header-info">
+      <h1>Claude Science BYOK Proxy</h1>
+      <div class="subtitle">使用 DeepSeek / OpenAI 驱动 Claude Science</div>
+    </div>
+    <div class="status-badge status-running" id="statusBadge">
+      <span class="status-dot"></span>
+      <span id="statusText">运行中</span>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" data-tab="providers">🔑 API 配置</button>
+    <button class="tab" data-tab="routing">🔀 路由规则</button>
+    <button class="tab" data-tab="setup">⚡ 一键部署</button>
+    <button class="tab" data-tab="logs">📋 请求日志</button>
+  </div>
+
+  <!-- Tab: API 配置 -->
+  <div class="tab-content active" id="tab-providers">
+    <!-- DeepSeek -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span class="provider-tag provider-deepseek">DeepSeek</span> DeepSeek API
+        </div>
+        <span style="font-size:11px;color:var(--text-dim)" id="deepseekStatus"></span>
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <div class="input-row">
+          <input type="password" id="deepseekKey" placeholder="sk-..." autocomplete="off">
+          <button class="btn btn-outline btn-sm" onclick="toggleVisibility('deepseekKey')">👁</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>API Base URL</label>
+        <input type="text" id="deepseekBase" value="https://api.deepseek.com" placeholder="https://api.deepseek.com">
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-outline btn-sm" onclick="testBackend('deepseek')">🔍 测试连接</button>
+        <button class="btn btn-primary btn-sm" onclick="saveProvider('deepseek')">💾 保存</button>
+      </div>
+    </div>
+
+    <!-- OpenAI -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span class="provider-tag provider-openai">OpenAI</span> OpenAI / ChatGPT API
+        </div>
+        <span style="font-size:11px;color:var(--text-dim)" id="openaiStatus"></span>
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <div class="input-row">
+          <input type="password" id="openaiKey" placeholder="sk-..." autocomplete="off">
+          <button class="btn btn-outline btn-sm" onclick="toggleVisibility('openaiKey')">👁</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>API Base URL</label>
+        <input type="text" id="openaiBase" value="https://api.openai.com" placeholder="https://api.openai.com">
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-outline btn-sm" onclick="testBackend('openai')">🔍 测试连接</button>
+        <button class="btn btn-primary btn-sm" onclick="saveProvider('openai')">💾 保存</button>
+      </div>
+    </div>
+
+    <!-- Custom -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span class="provider-tag provider-custom">Custom</span> OpenAI-compatible API
+        </div>
+        <span style="font-size:11px;color:var(--text-dim)" id="customStatus"></span>
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <div class="input-row">
+          <input type="password" id="customKey" placeholder="sk-..." autocomplete="off">
+          <button class="btn btn-outline btn-sm" onclick="toggleVisibility('customKey')">👁</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>API Base URL</label>
+        <input type="text" id="customBase" placeholder="https://provider.example.com 或 https://provider.example.com/v1">
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-outline btn-sm" onclick="testBackend('custom')">🔍 测试连接</button>
+        <button class="btn btn-primary btn-sm" onclick="saveProvider('custom')">💾 保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: 路由规则 -->
+  <div class="tab-content" id="tab-routing" style="display:none">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:14px"><span class="icon">🔀</span> 模型路由配置</div>
+      <div class="form-group">
+        <label>默认后端</label>
+        <select id="defaultBackend">
+          <option value="deepseek">DeepSeek</option>
+          <option value="openai">OpenAI / ChatGPT</option>
+          <option value="custom">Custom OpenAI-compatible</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>强制模型名（覆盖所有请求，留空则透传）</label>
+        <input type="text" id="forceModel" placeholder="例如: deepseek-chat 或 gpt-4o">
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="margin-bottom:14px"><span class="icon">🗺</span> 模型名映射</div>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">
+        Claude Science 中选的模型 → 实际调用的后端模型
+      </p>
+      <div class="form-group">
+        <label>DeepSeek 映射（JSON）</label>
+        <textarea id="deepseekModelMap" rows="3" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:8px;font-family:monospace"
+          placeholder='{"claude-sonnet-4-5":"deepseek-chat"}'></textarea>
+      </div>
+      <div class="form-group">
+        <label>OpenAI 映射（JSON）</label>
+        <textarea id="openaiModelMap" rows="3" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:8px;font-family:monospace"
+          placeholder='{"claude-sonnet-4-5":"gpt-4o"}'></textarea>
+      </div>
+      <div class="form-group">
+        <label>Custom 映射（JSON）</label>
+        <textarea id="customModelMap" rows="3" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:8px;font-family:monospace"
+          placeholder='{"claude-sonnet-4-5":"your-model"}'></textarea>
+      </div>
+      <div class="form-group">
+        <label>DeepSeek 模型匹配正则</label>
+        <input type="text" id="deepseekPattern" value="deepseek|deep-seek">
+      </div>
+      <div class="form-group">
+        <label>OpenAI 模型匹配正则</label>
+        <input type="text" id="openaiPattern" value="^(gpt-|o1|o3|o4|chatgpt)">
+      </div>
+      <div class="form-group">
+        <label>Custom 模型匹配正则</label>
+        <input type="text" id="customPattern" placeholder="例如: ^(kimi|qwen|glm|yi-)">
+      </div>
+      <div class="form-group">
+        <label>reasoning_content 显示策略</label>
+        <select id="reasoningPolicy">
+          <option value="fallback">fallback：content 为空时显示 reasoning_content</option>
+          <option value="never">never：不显示 reasoning_content</option>
+          <option value="always">always：有 reasoning_content 时优先显示</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="saveRouting()">💾 保存路由配置</button>
+    </div>
+  </div>
+
+  <!-- Tab: 一键部署 -->
+  <div class="tab-content" id="tab-setup" style="display:none">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:16px"><span class="icon">⚡</span> macOS 一键部署</div>
+      <div class="setup-steps">
+        <div class="setup-step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <h4>设置 API Key</h4>
+            <p>在「API 配置」标签页填入 DeepSeek 或 OpenAI 的 API Key</p>
+          </div>
+        </div>
+        <div class="setup-step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <h4>设置全局环境变量</h4>
+            <p>让 Claude Science 从 Dock/Spotlight 启动时也能读取 ANTHROPIC_BASE_URL</p>
+            <button class="btn btn-outline btn-sm" onclick="setGlobalEnv()" style="margin-top:8px">
+              🔧 设置 ANTHROPIC_BASE_URL
+            </button>
+          </div>
+        </div>
+        <div class="setup-step">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <h4>安装后台服务</h4>
+            <p>将 proxy 安装为 launchd 服务，开机自启，无需手动启动</p>
+            <button class="btn btn-outline btn-sm" onclick="installService()" style="margin-top:8px">
+              ⚙ 安装 LaunchAgent
+            </button>
+          </div>
+        </div>
+        <div class="setup-step">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <h4>刷新 OAuth Token</h4>
+            <p>重新生成假 OAuth token（更换账号或 token 过期后需要）</p>
+            <button class="btn btn-outline btn-sm" onclick="refreshToken()" style="margin-top:8px">
+              🔄 刷新 Token
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px"><span class="icon">📋</span> 手动启动</div>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px">
+        复制以下命令在终端执行，即可使用 Claude Science：
+      </p>
+      <div class="cmd-block">
+        <button class="copy-btn" onclick="copyCmd('shell')">📋 复制</button>
+        <div id="shellCmd">export ANTHROPIC_BASE_URL="http://127.0.0.1:9876"<br>open -a "Claude Science"</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: 请求日志 -->
+  <div class="tab-content" id="tab-logs" style="display:none">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="icon">📋</span> 最近请求</div>
+        <div class="btn-group">
+          <button class="btn btn-outline btn-sm" onclick="loadLogs()">🔄 刷新</button>
+          <button class="btn btn-outline btn-sm" onclick="clearLogs()">🗑 清空</button>
+        </div>
+      </div>
+      <div class="log-list" id="logList">
+        <div class="log-empty">暂无请求记录</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Tab switching ──
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const target = tab.dataset.tab;
+    document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+    document.getElementById('tab-' + target).style.display = 'block';
+    if (target === 'logs') loadLogs();
+  });
+});
+
+// ── Toast ──
+function toast(msg, type='info') {
+  const container = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; }, 2500);
+  setTimeout(() => el.remove(), 3000);
+}
+
+// ── API helpers ──
+async function api(path, opts={}) {
+  const res = await fetch(path, { headers: {'Content-Type':'application/json'}, ...opts });
+  return res.json();
+}
+
+// ── Toggle password visibility ──
+function toggleVisibility(id) {
+  const el = document.getElementById(id);
+  el.type = el.type === 'password' ? 'text' : 'password';
+}
+
+// ── Load config ──
+async function loadConfig() {
+  try {
+    const cfg = await api('/api/config');
+    // Don't pre-fill API keys (they're masked by the server)
+    // Only show placeholder to indicate whether key is configured
+    document.getElementById('deepseekKey').placeholder = cfg.deepseek_api_key ? '(已配置，输入新 key 可覆盖)' : 'sk-...';
+    document.getElementById('deepseekBase').value = cfg.deepseek_base_url || 'https://api.deepseek.com';
+    document.getElementById('openaiKey').placeholder = cfg.openai_api_key ? '(已配置，输入新 key 可覆盖)' : 'sk-...';
+    document.getElementById('openaiBase').value = cfg.openai_base_url || 'https://api.openai.com';
+    document.getElementById('customKey').placeholder = cfg.custom_api_key ? '(已配置，输入新 key 可覆盖)' : 'sk-...';
+    document.getElementById('customBase').value = cfg.custom_base_url || '';
+    document.getElementById('defaultBackend').value = cfg.default_backend || 'deepseek';
+    document.getElementById('forceModel').value = cfg.force_model || '';
+    document.getElementById('deepseekModelMap').value = JSON.stringify(cfg.deepseek_model_map || {}, null, 2);
+    document.getElementById('openaiModelMap').value = JSON.stringify(cfg.openai_model_map || {}, null, 2);
+    document.getElementById('customModelMap').value = JSON.stringify(cfg.custom_model_map || {}, null, 2);
+    document.getElementById('deepseekPattern').value = cfg.deepseek_model_pattern || 'deepseek|deep-seek';
+    document.getElementById('openaiPattern').value = cfg.openai_model_pattern || '^(gpt-|o1|o3|o4|chatgpt)';
+    document.getElementById('customPattern').value = cfg.custom_model_pattern || '';
+    document.getElementById('reasoningPolicy').value = cfg.reasoning_content_policy || 'fallback';
+    updateProviderStatus(cfg);
+  } catch(e) { console.error('Load config failed:', e); }
+}
+
+function updateProviderStatus(cfg) {
+  const ds = document.getElementById('deepseekStatus');
+  const oa = document.getElementById('openaiStatus');
+  const cu = document.getElementById('customStatus');
+  ds.textContent = cfg.deepseek_api_key ? '✅ 已配置' : '⚠ 未配置';
+  ds.style.color = cfg.deepseek_api_key ? 'var(--green)' : 'var(--yellow)';
+  oa.textContent = cfg.openai_api_key ? '✅ 已配置' : '⚠ 未配置';
+  oa.style.color = cfg.openai_api_key ? 'var(--green)' : 'var(--yellow)';
+  cu.textContent = cfg.custom_api_key && cfg.custom_base_url ? '✅ 已配置' : '⚠ 未配置';
+  cu.style.color = cfg.custom_api_key && cfg.custom_base_url ? 'var(--green)' : 'var(--yellow)';
+}
+
+// ── Save provider ──
+async function saveProvider(provider) {
+  const body = {};
+  if (provider === 'deepseek') {
+    body.deepseek_api_key = document.getElementById('deepseekKey').value;
+    body.deepseek_base_url = document.getElementById('deepseekBase').value;
+  } else if (provider === 'openai') {
+    body.openai_api_key = document.getElementById('openaiKey').value;
+    body.openai_base_url = document.getElementById('openaiBase').value;
+  } else {
+    body.custom_api_key = document.getElementById('customKey').value;
+    body.custom_base_url = document.getElementById('customBase').value;
+  }
+  const res = await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
+  if (res.ok) {
+    toast(`${provider === 'deepseek' ? 'DeepSeek' : 'OpenAI'} 配置已保存`, 'success');
+    loadConfig();
+  } else {
+    toast('保存失败: ' + (res.error || 'Unknown error'), 'error');
+  }
+}
+
+// ── Save routing ──
+async function saveRouting() {
+  let dsMap = {}, oaMap = {}, customMap = {};
+  try { dsMap = JSON.parse(document.getElementById('deepseekModelMap').value || '{}'); } catch(e) { toast('DeepSeek 映射 JSON 格式错误', 'error'); return; }
+  try { oaMap = JSON.parse(document.getElementById('openaiModelMap').value || '{}'); } catch(e) { toast('OpenAI 映射 JSON 格式错误', 'error'); return; }
+  try { customMap = JSON.parse(document.getElementById('customModelMap').value || '{}'); } catch(e) { toast('Custom 映射 JSON 格式错误', 'error'); return; }
+
+  const body = {
+    default_backend: document.getElementById('defaultBackend').value,
+    force_model: document.getElementById('forceModel').value,
+    deepseek_model_map: dsMap,
+    openai_model_map: oaMap,
+    custom_model_map: customMap,
+    deepseek_model_pattern: document.getElementById('deepseekPattern').value,
+    openai_model_pattern: document.getElementById('openaiPattern').value,
+    custom_model_pattern: document.getElementById('customPattern').value,
+    reasoning_content_policy: document.getElementById('reasoningPolicy').value,
+  };
+  const res = await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
+  if (res.ok) {
+    toast('路由配置已保存，已即时生效', 'success');
+  } else {
+    toast('保存失败: ' + (res.error || ''), 'error');
+  }
+}
+
+// ── Test backend ──
+async function testBackend(provider) {
+  const key = document.getElementById(provider + 'Key').value;
+  const base = document.getElementById(provider + 'Base').value;
+  if (!key) { toast('请先填入 API Key', 'error'); return; }
+
+  toast('正在测试连接...', 'info');
+  const res = await api('/api/test-backend', {
+    method: 'POST',
+    body: JSON.stringify({ provider, api_key: key, base_url: base })
+  });
+  if (res.ok) {
+    toast(`✅ ${provider === 'deepseek' ? 'DeepSeek' : 'OpenAI'} 连接成功！模型: ${res.models ? res.models.join(', ') : 'OK'}`, 'success');
+  } else {
+    toast(`❌ 连接失败: ${res.error || '未知错误'}`, 'error');
+  }
+}
+
+// ── One-click setup ──
+async function setGlobalEnv() {
+  toast('正在设置全局环境变量...', 'info');
+  const res = await api('/api/setup-global-env', { method: 'POST' });
+  if (res.ok) {
+    toast('✅ ANTHROPIC_BASE_URL 已设为全局环境变量', 'success');
+    document.getElementById('shellCmd').innerHTML =
+      `# 环境变量已全局设置，直接启动即可<br>open -a "Claude Science"<br><br># 或手动设置：<br>export ANTHROPIC_BASE_URL="${res.proxy_url}"`;
+  } else {
+    toast('⚠ 自动设置失败，请手动执行命令', 'error');
+  }
+}
+
+async function installService() {
+  toast('正在安装后台服务...', 'info');
+  const res = await api('/api/install-service', { method: 'POST' });
+  if (res.ok) {
+    toast('✅ LaunchAgent 已安装，proxy 将开机自启', 'success');
+  } else {
+    toast('⚠ 安装失败: ' + (res.error || ''), 'error');
+  }
+}
+
+async function refreshToken() {
+  toast('正在刷新 OAuth Token...', 'info');
+  const res = await api('/api/refresh-token', { method: 'POST' });
+  if (res.ok) {
+    toast('✅ OAuth Token 已刷新', 'success');
+  } else {
+    toast('❌ 刷新失败: ' + (res.error || ''), 'error');
+  }
+}
+
+async function copyCmd(type) {
+  const text = 'export ANTHROPIC_BASE_URL="http://127.0.0.1:9876"\nopen -a "Claude Science"';
+  await navigator.clipboard.writeText(text);
+  toast('📋 已复制到剪贴板', 'success');
+}
+
+// ── Logs ──
+async function loadLogs() {
+  try {
+    const res = await api('/api/recent-requests');
+    const list = document.getElementById('logList');
+    if (!res.requests || res.requests.length === 0) {
+      list.innerHTML = '<div class="log-empty">暂无请求记录</div>';
+      return;
+    }
+    list.innerHTML = res.requests.map(r => `
+      <div class="log-entry">
+        <span class="log-time">${r.time}</span>
+        <span class="log-backend ${r.backend}">${r.backend}</span>
+        <span class="log-model">${r.model}${r.stream ? ' 🔄' : ''}</span>
+        <span class="log-status ${r.status}">${r.status === 'success' ? '✓' : '✗'}</span>
+      </div>
+    `).join('');
+  } catch(e) { console.error('Load logs failed:', e); }
+}
+
+async function clearLogs() {
+  await api('/api/recent-requests', { method: 'DELETE' });
+  document.getElementById('logList').innerHTML = '<div class="log-empty">已清空</div>';
+}
+
+// ── Init ──
+loadConfig();
+setInterval(loadConfig, 30000); // Auto-refresh config every 30s
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "deepseek_api_key": "",
+  "openai_api_key": "",
+  "custom_api_key": "",
+  "deepseek_base_url": "https://api.deepseek.com",
+  "openai_base_url": "https://api.openai.com",
+  "custom_base_url": "",
+  "default_backend": "deepseek",
+  "force_model": "deepseek-chat",
+  "deepseek_model_map": {
+    "claude-sonnet-4-5": "deepseek-chat",
+    "claude-opus-4-8": "deepseek-chat"
+  },
+  "openai_model_map": {
+    "claude-sonnet-4-5": "gpt-4o"
+  },
+  "custom_model_map": {},
+  "deepseek_model_pattern": "deepseek|deep-seek",
+  "openai_model_pattern": "^(gpt-|o1|o3|o4|chatgpt)",
+  "custom_model_pattern": "",
+  "reasoning_content_policy": "fallback",
+  "proxy_host": "127.0.0.1",
+  "proxy_port": 9876
+}
+
