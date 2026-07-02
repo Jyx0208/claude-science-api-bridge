@@ -1,31 +1,32 @@
-# Claude Science Third-Party API Proxy
+# Claude Science API Bridge
 
-Local Anthropic-compatible proxy for Claude Science on macOS. It lets Claude Science use DeepSeek, OpenAI, or another OpenAI-compatible API provider.
+让 Claude Science 安全接入 DeepSeek、OpenAI 与任意 OpenAI 兼容第三方 API 的本地代理和 agent 配置手册。
 
-This repository is intentionally written as an agent-readable runbook. An AI coding agent can read `AGENTS.md`, follow `docs/agent-runbook.md`, run the safe scripts, and verify the setup without changing the user's network stack.
+这个项目不只是一个代理程序，也是一份给 AI agent 读取的操作说明书。把仓库交给 Codex、Claude Code 或其他本地 agent 后，它可以先读 `AGENTS.md` 和 `docs/agent-runbook.md`，再按步骤完成诊断、安装、配置和验证。
 
-## What It Does
+## 功能
 
-- Provides a local Anthropic Messages API endpoint on `127.0.0.1:9876`.
-- Converts Anthropic Messages requests to OpenAI Chat Completions requests.
-- Converts OpenAI-compatible responses back to Anthropic-style responses.
-- Supports streaming, non-streaming, tool calls, tool results, image blocks, and basic token counting.
-- Creates a local fake Claude Science OAuth token so the app can start without a real Anthropic session.
-- Provides a dashboard at `http://127.0.0.1:9876/dashboard`.
-- Installs as a macOS LaunchAgent in safe mode.
+- 在本机启动 Anthropic 兼容接口：`http://127.0.0.1:9876`
+- 将 Claude Science 的 Anthropic Messages API 请求转换为 OpenAI Chat Completions 请求
+- 将 DeepSeek、OpenAI 或其他 OpenAI 兼容接口的响应转换回 Anthropic 格式
+- 支持流式、非流式、工具调用、工具结果、图片 block 和基础 token 计数
+- 自动生成 Claude Science 可接受的本地 fake OAuth token
+- 提供 Web 管理面板：`http://127.0.0.1:9876/dashboard`
+- 支持 macOS LaunchAgent 后台运行和开机自启
+- 提供 agent runbook，方便 AI agent 在用户电脑上安全接管配置
 
-## Safe Default
+## 默认安全策略
 
-The default install does not edit:
+默认安装只走安全模式，不会修改：
 
-- Clash, VPN, TUN, DNS, or system proxy settings
+- Clash、VPN、TUN、DNS 或系统代理配置
 - `/etc/hosts`
-- System keychain trust
-- Port `443`
+- macOS 系统证书信任
+- `443` 端口
 
-Advanced HTTPS interception exists, but it is opt-in. Read `docs/network-interception.md` first.
+如果 Claude Science 的某些硬编码 HTTPS 请求必须拦截，可以使用高级模式，但需要先阅读 `docs/network-interception.md`，并由用户明确同意。
 
-## Quick Start
+## 快速开始
 
 ```bash
 cd ~/.claude-science/proxy
@@ -33,37 +34,40 @@ cd ~/.claude-science/proxy
 open http://127.0.0.1:9876/dashboard
 ```
 
-In the dashboard:
+然后在面板里：
 
-1. Configure DeepSeek, OpenAI, or Custom OpenAI-compatible API.
-2. Set `default_backend`.
-3. Set `force_model` to the real model name your provider expects.
-4. Start Claude Science:
+1. 配置 DeepSeek、OpenAI 或 Custom OpenAI-compatible API。
+2. 设置 `default_backend`。
+3. 设置 `force_model` 为你的第三方服务实际支持的模型名。
+4. 启动 Claude Science：
 
 ```bash
 open -a "Claude Science"
 ```
 
-## Agent Quick Start
+## 给 Agent 的入口
 
-If you are an AI agent, read these files in order:
+如果你是 AI agent，请按顺序读取：
 
 1. `AGENTS.md`
 2. `docs/agent-runbook.md`
 3. `docs/troubleshooting.md`
-4. `docs/network-interception.md` only if explicitly approved
-5. `docs/github-publishing.md` before publishing
+4. `docs/network-interception.md`，仅在用户明确允许高级拦截时读取和执行
+5. `docs/github-publishing.md`，仅在需要发布到 GitHub 时读取
 
-Then run:
+推荐执行流程：
 
 ```bash
 ./scripts/doctor.sh
 ./scripts/install-safe.sh
+./scripts/self-test.sh
 ```
 
-## Provider Examples
+`doctor.sh` 是只读诊断脚本；agent 应先运行它，不要直接猜测用户机器状态。
 
-DeepSeek:
+## Provider 配置示例
+
+### DeepSeek
 
 ```json
 {
@@ -74,7 +78,7 @@ DeepSeek:
 }
 ```
 
-OpenAI:
+### OpenAI
 
 ```json
 {
@@ -85,7 +89,7 @@ OpenAI:
 }
 ```
 
-Custom OpenAI-compatible provider:
+### 任意 OpenAI 兼容 API
 
 ```json
 {
@@ -96,9 +100,9 @@ Custom OpenAI-compatible provider:
 }
 ```
 
-`custom_base_url` may be either `https://provider.example.com` or `https://provider.example.com/v1`.
+`custom_base_url` 可以写成 `https://provider.example.com`，也可以写成 `https://provider.example.com/v1`，代理会自动规范化。
 
-## Verify
+## 验证
 
 ```bash
 curl -sS http://127.0.0.1:9876/health
@@ -108,13 +112,13 @@ curl -sS http://127.0.0.1:9876/v1/messages \
   -d '{"model":"claude-sonnet-4-5","max_tokens":32,"messages":[{"role":"user","content":"Reply OK"}]}'
 ```
 
-Recent request log:
+查看最近请求：
 
 ```bash
 curl -sS http://127.0.0.1:9876/api/recent-requests
 ```
 
-## Files
+## 项目结构
 
 ```text
 .
@@ -131,6 +135,7 @@ curl -sS http://127.0.0.1:9876/api/recent-requests
 ├── scripts/
 │   ├── doctor.sh
 │   ├── install-safe.sh
+│   ├── self-test.sh
 │   ├── start-claude-science.sh
 │   └── uninstall.sh
 ├── docs/
@@ -142,25 +147,26 @@ curl -sS http://127.0.0.1:9876/api/recent-requests
     └── dashboard.html
 ```
 
-## Do Not Commit
+## 不要提交的文件
 
-`.gitignore` excludes local secrets and generated state:
+`.gitignore` 已排除本地敏感文件和运行态文件：
 
 - `config.json`
 - `.env`
 - `certs/`
 - `*.plist`
-- logs
-- Python caches
+- 日志
+- Python 缓存
 
-Before publishing:
+发布前请确认：
 
 ```bash
 git status --ignored
 ```
 
-Confirm no API key, private key, OAuth token, or local certificate is staged.
+确保 API key、OAuth token、证书私钥和本地日志没有被加入 Git。
 
-## License
+## 许可证
 
-MIT. See `LICENSE`.
+MIT。见 `LICENSE`。
+
