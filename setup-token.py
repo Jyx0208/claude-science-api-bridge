@@ -18,6 +18,7 @@ from cryptography.fernet import Fernet
 
 TOKEN_DIR = os.path.expanduser("~/.claude-science/.oauth-tokens")
 ENC_KEY_FILE = os.path.expanduser("~/.claude-science/encryption.key")
+CLAUDE_AI_SCOPES = "user:inference user:file_upload user:profile user:mcp_servers user:plugins"
 
 
 def read_oauth_key():
@@ -46,17 +47,29 @@ def main():
 
     token_data = {
         "access_token": fake_access_token,
-        "refresh_token": "fake-refresh-token",
+        "refresh_token": None,
         "api_key": None,
         "token_expires_at": "2099-12-31T23:59:59Z",
-        "provider": "anthropic",
-        "scopes": "openid profile email",
+        # Claude Science's daemon only treats .oauth-tokens as signed in when
+        # the provider is exactly "claude_ai".
+        "provider": "claude_ai",
+        "scopes": CLAUDE_AI_SCOPES,
         "email": "byok@localhost",
         "account_uuid": account_uuid,
         "subscription_type": "max",
         "rate_limit_tier": "tier_5",
         "seat_tier": "enterprise_usage_based",
         "org_uuid": org_uuid,
+        "organization": {
+            "uuid": org_uuid,
+            "name": "BYOK Organization",
+            "organization_type": "claude_max",
+            "rate_limit_tier": "tier_5",
+            "seat_tier": "enterprise_usage_based",
+            "billing_type": "api",
+            "has_extra_usage_enabled": True,
+            "claude_ai_completion_feedback_enabled": False,
+        },
         "billing_type": "api",
         "has_extra_usage_enabled": True,
     }

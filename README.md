@@ -12,6 +12,8 @@
 - 支持流式、非流式、工具调用、工具结果、真实图片输入和基础 token 计数
 - 对支持视觉的 OpenAI 兼容模型保留图片输入；对文本模型可自动省略图片，避免后端报错
 - 自动生成 Claude Science 可接受的本地 fake OAuth token
+- 支持第三方模型别名，让 Claude Science 模型选择里显示 Kimi、Qwen、GPT 等真实后端模型名
+- 可安全补丁本地 daemon 复制件，把硬编码的 Opus/Sonnet 菜单替换成 BYOK 模型菜单
 - 提供 Web 管理面板：`http://127.0.0.1:9876/dashboard`
 - 支持 macOS LaunchAgent 后台运行和开机自启
 - 提供 agent runbook，方便 AI agent 在用户电脑上安全接管配置
@@ -52,7 +54,8 @@ https://github.com/Jyx0208/claude-science-api-bridge
 2. 让 Claude Science 的 Anthropic API 请求走本地代理 127.0.0.1:9876。
 3. 后端使用我提供的第三方 API。
 4. 如果我要求读图，请使用支持视觉输入的模型，不要把图片替换成文本占位。
-5. 完成端到端验证，确认 /v1/models 和 /v1/messages 都成功；如果启用读图，还要完成图片请求验证。
+5. 让 Claude Science 的模型选择里显示第三方模型别名，而不是只显示 Opus / Sonnet / Haiku。
+6. 完成端到端验证，确认 /v1/models 和 /v1/messages 都成功；如果启用读图，还要完成图片请求验证。
 
 我的后端配置：
 - provider: DeepSeek / OpenAI / Custom（三选一；硅基流动 Kimi 请选择 Custom；如果我没写，请先问我）
@@ -73,12 +76,13 @@ https://github.com/Jyx0208/claude-science-api-bridge
 2. 先运行 ./scripts/doctor.sh 做只读诊断。
 3. 按 AGENTS.md 和 docs/agent-runbook.md 执行安全安装。
 4. 将 API key 和模型配置写入本地 config.json，确保 config.json 不会提交到 Git。
-5. 运行 ./scripts/self-test.sh。
-6. 启动或重启代理服务。
-7. 运行 ./scripts/verify-proxy.sh 做 health、models、messages 和 recent-requests 验证。
-8. 如果模型支持读图，运行 VERIFY_IMAGE=1 ./scripts/verify-proxy.sh 做真实图片输入验证。
-9. 启动或重启 Claude Science。
-10. 再检查 http://127.0.0.1:9876/api/recent-requests，确认 Claude Science 命中了本地代理。
+5. 配置 model_aliases 和 model_list_mode=aliases，让 /v1/models 只返回第三方模型别名。
+6. 运行 ./scripts/self-test.sh。
+7. 启动或重启代理服务。
+8. 运行 ./scripts/verify-proxy.sh 做 health、models、messages 和 recent-requests 验证。
+9. 如果模型支持读图，运行 VERIFY_IMAGE=1 ./scripts/verify-proxy.sh 做真实图片输入验证。
+10. 运行 ./scripts/start-claude-science.sh，让脚本自动刷新 token、补丁本地 daemon 复制件并重启 Claude Science。
+11. 再检查 http://127.0.0.1:9876/api/recent-requests，确认 Claude Science 命中了本地代理。
 
 如果遇到问题：
 1. 先运行 ./scripts/doctor.sh。
@@ -149,6 +153,15 @@ https://github.com/Jyx0208/claude-science-api-bridge
   "custom_base_url": "https://provider.example.com",
   "default_backend": "custom",
   "force_model": "provider-model-name",
+  "model_aliases": [
+    {
+      "id": "byok-model-0001",
+      "display_name": "Provider Model",
+      "backend": "custom",
+      "model": "provider-model-name"
+    }
+  ],
+  "model_list_mode": "aliases",
   "inline_image_policy": "auto"
 }
 ```
@@ -163,12 +176,57 @@ https://github.com/Jyx0208/claude-science-api-bridge
   "custom_base_url": "https://api.siliconflow.cn",
   "default_backend": "custom",
   "force_model": "Pro/moonshotai/Kimi-K2.6",
+  "model_aliases": [
+    {
+      "id": "byok-model-0001",
+      "display_name": "Kimi K2.6 Pro++",
+      "backend": "custom",
+      "model": "Pro/moonshotai/Kimi-K2.6"
+    }
+  ],
+  "model_list_mode": "aliases",
   "inline_image_policy": "preserve",
   "reasoning_content_policy": "never"
 }
 ```
 
 `reasoning_content_policy` 默认应保持 `never`。部分后端会把内部思考、会话恢复记录或执行计划放在 `reasoning_content` 或普通 `content` 前缀里；代理会尽量过滤这些工作记录，避免它们作为普通对话显示。
+
+## 模型选择显示第三方模型
+
+Claude Science 的模型选择界面有一部分来自本地 daemon 的硬编码模型列表，因此只改 `/v1/models` 不一定能让界面立刻显示第三方模型名。
+
+安全安装和启动脚本会自动运行：
+
+```bash
+./scripts/patch-daemon-models.sh
+```
+
+这个脚本只修改 `~/.claude-science/bin/claude-science` 这一份用户目录里的 daemon 复制件，不修改 `/Applications/Claude Science.app`，也不修改 Clash、DNS、系统代理、证书或 443 端口。脚本会：
+
+- 备份本地 daemon 复制件
+- 把 Claude-facing 模型 ID 改成固定别名：`byok-model-0001`、`byok-model-0002`、`byok-model-000003`
+- 把显示名改成 `model_aliases` 里的第三方模型名
+- 同步写回 `config.json`，确保这些菜单 ID 能路由到真实后端模型
+- 重新 ad-hoc 签名并执行 daemon 可运行检查
+
+常用配置：
+
+```json
+{
+  "model_aliases": [
+    {
+      "id": "byok-model-0001",
+      "display_name": "Kimi K2.6 Pro++",
+      "backend": "custom",
+      "model": "Pro/moonshotai/Kimi-K2.6"
+    }
+  ],
+  "model_list_mode": "aliases"
+}
+```
+
+`model_aliases` 中的 `id` 是 Claude Science 看到的模型 ID，`model` 是实际发给第三方 API 的模型名。别名命中时会优先于 `force_model`，所以用户在菜单里选择哪个第三方别名，代理就会调用对应的真实模型。
 
 ## 图片 / 读图能力
 
@@ -235,6 +293,9 @@ curl -sS http://127.0.0.1:9876/api/recent-requests
 ├── scripts/
 │   ├── doctor.sh
 │   ├── install-safe.sh
+│   ├── patch-daemon-auth.sh
+│   ├── patch-daemon-models.sh
+│   ├── restore-daemon-auth.sh
 │   ├── self-test.sh
 │   ├── start-claude-science.sh
 │   ├── uninstall.sh

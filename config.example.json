@@ -15,6 +15,15 @@
     "claude-sonnet-4-5": "gpt-4o"
   },
   "custom_model_map": {},
+  "model_aliases": [
+    {
+      "id": "byok-model-0001",
+      "display_name": "Kimi K2.6 Pro++",
+      "backend": "custom",
+      "model": "Pro/moonshotai/Kimi-K2.6"
+    }
+  ],
+  "model_list_mode": "aliases",
   "deepseek_model_pattern": "deepseek|deep-seek",
   "openai_model_pattern": "^(gpt-|o1|o3|o4|chatgpt)",
   "custom_model_pattern": "",

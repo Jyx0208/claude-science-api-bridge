@@ -70,6 +70,7 @@ mapping = {
     "CUSTOM_BASE_URL": "custom_base_url",
     "DEFAULT_BACKEND": "default_backend",
     "FORCE_MODEL": "force_model",
+    "MODEL_LIST_MODE": "model_list_mode",
     "REASONING_CONTENT_POLICY": "reasoning_content_policy",
     "INLINE_IMAGE_POLICY": "inline_image_policy",
 }
@@ -83,6 +84,7 @@ for env_key, config_key in {
     "DEEPSEEK_MODEL_MAP": "deepseek_model_map",
     "OPENAI_MODEL_MAP": "openai_model_map",
     "CUSTOM_MODEL_MAP": "custom_model_map",
+    "MODEL_ALIASES": "model_aliases",
 }.items():
     value = os.environ.get(env_key)
     if value:
@@ -111,6 +113,24 @@ else
     echo "OAuth token was not generated because encryption.key is still missing."
     echo "Agent action: open Claude Science once, wait for local files, then rerun ./scripts/install-safe.sh."
   fi
+fi
+
+if [ "${DISABLE_DAEMON_AUTH_PATCH:-0}" != "1" ]; then
+  PYTHON="$PYTHON_BIN" PROXY_PORT="$PROXY_PORT" "$PROJECT_DIR/scripts/patch-daemon-auth.sh" || {
+    echo "Warning: Claude Science daemon auth patch was not applied."
+    echo "Agent action: if Claude Science still shows logged-out, inspect docs/troubleshooting.md before changing network settings."
+  }
+else
+  echo "Daemon auth binary patch is disabled by DISABLE_DAEMON_AUTH_PATCH=1."
+fi
+
+if [ "${DISABLE_DAEMON_MODEL_PATCH:-0}" != "1" ]; then
+  PYTHON="$PYTHON_BIN" "$PROJECT_DIR/scripts/patch-daemon-models.sh" || {
+    echo "Warning: Claude Science daemon model menu patch was not applied."
+    echo "Agent action: Claude Science may still show Claude model names; inspect docs/troubleshooting.md."
+  }
+else
+  echo "Daemon model menu patch is disabled by DISABLE_DAEMON_MODEL_PATCH=1."
 fi
 
 launchctl setenv ANTHROPIC_BASE_URL "$PROXY_URL"
@@ -161,4 +181,4 @@ curl -fsS "$PROXY_URL/health"
 printf '\n'
 echo "Safe install complete."
 echo "Dashboard: $PROXY_URL/dashboard"
-echo "Start Claude Science with: open -a \"Claude Science\""
+echo "Start Claude Science with: $PROJECT_DIR/scripts/start-claude-science.sh"

@@ -37,6 +37,16 @@ def reasoning_policy(policy: str):
         proxy.config._data["reasoning_content_policy"] = old
 
 
+@contextmanager
+def config_values(**values):
+    old = {key: proxy.config._data.get(key) for key in values}
+    proxy.config._data.update(values)
+    try:
+        yield
+    finally:
+        proxy.config._data.update(old)
+
+
 def test_tool_schema_root_type_is_object():
     body = {
         "model": "claude-sonnet-4-5",
@@ -61,6 +71,48 @@ def test_tool_schema_root_type_is_object():
 
     assert params["type"] == "object"
     assert params["properties"]["query"]["type"] == "string"
+
+
+def test_model_alias_routes_to_configured_backend_model_even_with_force_model():
+    with config_values(
+        default_backend="custom",
+        custom_api_key="test-key",
+        custom_base_url="https://api.siliconflow.cn",
+        force_model="wrong-global-force-model",
+        model_aliases=[{
+            "id": "byok-model-0001",
+            "display_name": "Kimi K2.6 Pro++",
+            "backend": "custom",
+            "model": "Pro/moonshotai/Kimi-K2.6",
+        }],
+    ):
+        backend = proxy.config.resolve_backend("byok-model-0001")
+
+    assert backend["backend"] == "custom"
+    assert backend["model"] == "Pro/moonshotai/Kimi-K2.6"
+    assert backend["base_url"] == "https://api.siliconflow.cn/v1"
+
+
+def test_models_endpoint_can_return_only_third_party_aliases():
+    client = TestClient(proxy.app)
+    with config_values(
+        model_list_mode="aliases",
+        model_aliases=[{
+            "id": "byok-model-0001",
+            "display_name": "Kimi K2.6 Pro++",
+            "backend": "custom",
+            "model": "Pro/moonshotai/Kimi-K2.6",
+        }],
+    ):
+        response = client.get("/v1/models")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data == [{
+        "id": "byok-model-0001",
+        "type": "model",
+        "display_name": "Kimi K2.6 Pro++",
+    }]
 
 
 def test_siliconflow_forced_tool_choice_is_downgraded_to_auto():
@@ -613,3 +665,27 @@ def test_invalid_json_returns_400_without_exception():
 
     assert response.status_code == 400
     assert response.json()["error"]["type"] == "invalid_request_error"
+
+
+def test_oauth_profile_mock_matches_claude_science_shape():
+    client = TestClient(proxy.app)
+    response = client.get("/api/oauth/profile")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["account"]["uuid"] == proxy.FAKE_ACCOUNT_UUID
+    assert data["account"]["email_address"] == "byok@localhost"
+    assert data["organization"]["uuid"] == proxy.FAKE_ORG_UUID
+    assert data["organization"]["organization_type"] == "claude_max"
+    assert isinstance(data["enabled_plugins"], list)
+
+
+def test_oauth_token_mock_uses_claude_ai_provider_and_scopes():
+    client = TestClient(proxy.app)
+    response = client.post("/api/oauth/token")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["provider"] == "claude_ai"
+    for scope in ["user:inference", "user:profile", "user:mcp_servers", "user:plugins"]:
+        assert scope in data["scope"].split()

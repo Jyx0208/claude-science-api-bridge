@@ -67,6 +67,8 @@ class Config:
         "deepseek_model_map": {},
         "openai_model_map": {},
         "custom_model_map": {},
+        "model_aliases": [],
+        "model_list_mode": "aliases_first",
         "deepseek_model_pattern": r"deepseek|deep-seek",
         "openai_model_pattern": r"^(gpt-|o1|o3|o4|chatgpt)",
         "custom_model_pattern": "",
@@ -88,6 +90,8 @@ class Config:
         "deepseek_model_map": "DEEPSEEK_MODEL_MAP",
         "openai_model_map": "OPENAI_MODEL_MAP",
         "custom_model_map": "CUSTOM_MODEL_MAP",
+        "model_aliases": "MODEL_ALIASES",
+        "model_list_mode": "MODEL_LIST_MODE",
         "deepseek_model_pattern": "DEEPSEEK_MODEL_PATTERN",
         "openai_model_pattern": "OPENAI_MODEL_PATTERN",
         "custom_model_pattern": "CUSTOM_MODEL_PATTERN",
@@ -96,7 +100,7 @@ class Config:
         "proxy_host": "PROXY_HOST",
         "proxy_port": "PROXY_PORT",
     }
-    JSON_KEYS = {"deepseek_model_map", "openai_model_map", "custom_model_map"}
+    JSON_KEYS = {"deepseek_model_map", "openai_model_map", "custom_model_map", "model_aliases"}
 
     def __init__(self):
         self._data = dict(self.DEFAULTS)
@@ -171,6 +175,10 @@ class Config:
     @property
     def custom_model_map(self) -> dict: return self._data["custom_model_map"]
     @property
+    def model_aliases(self) -> list: return self._data["model_aliases"]
+    @property
+    def model_list_mode(self) -> str: return self._data["model_list_mode"]
+    @property
     def deepseek_model_pattern(self) -> str: return self._data["deepseek_model_pattern"]
     @property
     def openai_model_pattern(self) -> str: return self._data["openai_model_pattern"]
@@ -187,7 +195,12 @@ class Config:
 
     def resolve_backend(self, model: str) -> dict:
         """Determine which backend to use and what model name to send."""
+        alias = self.get_model_alias(model)
         backend = self.default_backend
+        alias_model = ""
+        if alias:
+            backend = (alias.get("backend") or backend or "").lower()
+            alias_model = str(alias.get("model") or model).strip()
         try:
             ds_pat = re.compile(self.deepseek_model_pattern, re.IGNORECASE)
             oa_pat = re.compile(self.openai_model_pattern, re.IGNORECASE)
@@ -197,25 +210,26 @@ class Config:
             oa_pat = re.compile(r"^(gpt-|o1|o3|o4|chatgpt)", re.IGNORECASE)
             custom_pat = None
 
-        if ds_pat.search(model):
-            backend = "deepseek"
-        elif oa_pat.search(model):
-            backend = "openai"
-        elif custom_pat and custom_pat.search(model):
-            backend = "custom"
+        if not alias:
+            if ds_pat.search(model):
+                backend = "deepseek"
+            elif oa_pat.search(model):
+                backend = "openai"
+            elif custom_pat and custom_pat.search(model):
+                backend = "custom"
 
         if backend == "deepseek":
             api_key = self.deepseek_api_key
             base_url = normalize_openai_base_url(self.deepseek_base_url)
-            mapped_model = self.force_model or self.deepseek_model_map.get(model, model)
+            mapped_model = alias_model or self.force_model or self.deepseek_model_map.get(model, model)
         elif backend == "openai":
             api_key = self.openai_api_key
             base_url = normalize_openai_base_url(self.openai_base_url)
-            mapped_model = self.force_model or self.openai_model_map.get(model, model)
+            mapped_model = alias_model or self.force_model or self.openai_model_map.get(model, model)
         elif backend == "custom":
             api_key = self.custom_api_key
             base_url = normalize_openai_base_url(self.custom_base_url)
-            mapped_model = self.force_model or self.custom_model_map.get(model, model)
+            mapped_model = alias_model or self.force_model or self.custom_model_map.get(model, model)
         else:
             raise ValueError(f"Unsupported backend '{backend}'. Use deepseek, openai, or custom.")
 
@@ -232,6 +246,13 @@ class Config:
             "base_url": base_url,
         }
 
+    def get_model_alias(self, model: str) -> Optional[dict]:
+        """Return a configured third-party model alias by Claude-facing model id."""
+        for alias in normalized_model_aliases(self.model_aliases):
+            if alias["id"] == model:
+                return alias
+        return None
+
 
 # Global config
 config = Config()
@@ -243,6 +264,71 @@ def normalize_openai_base_url(base_url: str) -> str:
     if not cleaned:
         return ""
     return cleaned if cleaned.endswith("/v1") else cleaned + "/v1"
+
+
+BUILTIN_COMPAT_MODELS = [
+    {"id": "claude-sonnet-4-5", "type": "model", "display_name": "Claude Sonnet 4.5"},
+    {"id": "claude-opus-4-8", "type": "model", "display_name": "Claude Opus 4.8"},
+    {"id": "claude-haiku-4-5-20251001", "type": "model", "display_name": "Claude Haiku 4.5"},
+    {"id": "deepseek-chat", "type": "model", "display_name": "DeepSeek Chat"},
+    {"id": "deepseek-reasoner", "type": "model", "display_name": "DeepSeek Reasoner"},
+    {"id": "gpt-4o", "type": "model", "display_name": "GPT-4o"},
+]
+
+
+def normalized_model_aliases(raw_aliases) -> list[dict]:
+    """Normalize user-facing model aliases from config/env into list form."""
+    if isinstance(raw_aliases, dict):
+        items = []
+        for alias_id, value in raw_aliases.items():
+            if isinstance(value, dict):
+                item = dict(value)
+                item.setdefault("id", alias_id)
+            else:
+                item = {"id": alias_id, "model": value}
+            items.append(item)
+    elif isinstance(raw_aliases, list):
+        items = raw_aliases
+    else:
+        items = []
+
+    normalized = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        alias_id = str(item.get("id", "")).strip()
+        if not alias_id:
+            continue
+        backend = str(item.get("backend") or "").strip().lower()
+        if backend not in {"", "deepseek", "openai", "custom"}:
+            continue
+        model = str(item.get("model") or alias_id).strip()
+        display_name = str(
+            item.get("display_name") or item.get("name") or model or alias_id
+        ).strip()
+        normalized.append({
+            "id": alias_id,
+            "backend": backend,
+            "model": model,
+            "display_name": display_name,
+        })
+    return normalized
+
+
+def model_list_for_config(cfg: Config) -> list[dict]:
+    aliases = [
+        {"id": a["id"], "type": "model", "display_name": a["display_name"]}
+        for a in normalized_model_aliases(cfg.model_aliases)
+    ]
+    mode = (cfg.model_list_mode or "aliases_first").lower()
+    if mode in {"aliases", "alias", "third_party", "third-party"} and aliases:
+        return aliases
+    if mode in {"builtin", "builtins", "compat"}:
+        return list(BUILTIN_COMPAT_MODELS)
+    if mode in {"aliases_first", "aliases-first", "mixed"}:
+        seen = {m["id"] for m in aliases}
+        return aliases + [m for m in BUILTIN_COMPAT_MODELS if m["id"] not in seen]
+    return aliases or list(BUILTIN_COMPAT_MODELS)
 
 # ---------------------------------------------------------------------------
 # Request log (in-memory ring buffer)
@@ -1473,6 +1559,7 @@ async def count_tokens(request: Request):
 FAKE_ACCOUNT_UUID = "byok-user-000000000000000000"
 FAKE_ORG_UUID = "org_byok_000000000000"
 FAKE_ACCESS_TOKEN = "fake-bearer-token-for-proxy"
+FAKE_CLAUDE_AI_SCOPES = "user:inference user:file_upload user:profile user:mcp_servers user:plugins"
 
 
 def fake_token_response() -> dict:
@@ -1482,21 +1569,48 @@ def fake_token_response() -> dict:
         "refresh_token": "fake-refresh-token",
         "expires_in": 999999999,
         "expires_at": "2099-12-31T23:59:59Z",
-        "scope": "openid profile email",
+        "scope": FAKE_CLAUDE_AI_SCOPES,
+        "scopes": FAKE_CLAUDE_AI_SCOPES,
+        "provider": "claude_ai",
+        "account": fake_account_response(),
+        "organization": fake_org_response(),
     }
 
 
-def fake_user_response() -> dict:
+def fake_account_response() -> dict:
     return {
         "id": FAKE_ACCOUNT_UUID,
         "uuid": FAKE_ACCOUNT_UUID,
         "sub": FAKE_ACCOUNT_UUID,
         "email": "byok@localhost",
+        "email_address": "byok@localhost",
         "email_verified": True,
         "name": "BYOK User",
+        "display_name": "BYOK User",
+    }
+
+
+def fake_user_response() -> dict:
+    account = fake_account_response()
+    org = fake_org_response()
+    return {
+        **account,
+        "id": FAKE_ACCOUNT_UUID,
+        "uuid": FAKE_ACCOUNT_UUID,
+        "sub": FAKE_ACCOUNT_UUID,
+        "email": "byok@localhost",
+        "email_address": "byok@localhost",
+        "email_verified": True,
+        "name": "BYOK User",
+        "display_name": "BYOK User",
+        "account": account,
+        "user": account,
         "organization": fake_org_response(),
+        "organizations": [org],
+        "active_organization": org,
         "organization_uuid": FAKE_ORG_UUID,
         "org_uuid": FAKE_ORG_UUID,
+        "enabled_plugins": [],
         "subscription_type": "max",
         "rate_limit_tier": "tier_5",
         "seat_tier": "enterprise_usage_based",
@@ -1511,11 +1625,15 @@ def fake_org_response() -> dict:
         "uuid": FAKE_ORG_UUID,
         "name": "BYOK Organization",
         "type": "organization",
+        "organization_type": "claude_max",
         "status": "active",
         "default_role": "admin",
         "subscription": {"type": "max", "status": "active"},
         "rate_limit_tier": "tier_5",
+        "seat_tier": "enterprise_usage_based",
         "billing_type": "api",
+        "has_extra_usage_enabled": True,
+        "claude_ai_completion_feedback_enabled": False,
     }
 
 
@@ -1549,14 +1667,7 @@ async def userinfo_mock(request: Request):
 @app.get("/v1/models")
 async def list_models(request: Request):
     """Return compatible model list."""
-    models = [
-        {"id": "claude-sonnet-4-5", "type": "model", "display_name": "Claude Sonnet 4.5"},
-        {"id": "claude-opus-4-8", "type": "model", "display_name": "Claude Opus 4.8"},
-        {"id": "claude-haiku-4-5-20251001", "type": "model", "display_name": "Claude Haiku 4.5"},
-        {"id": "deepseek-chat", "type": "model", "display_name": "DeepSeek Chat"},
-        {"id": "deepseek-reasoner", "type": "model", "display_name": "DeepSeek Reasoner"},
-        {"id": "gpt-4o", "type": "model", "display_name": "GPT-4o"},
-    ]
+    models = model_list_for_config(config)
     return JSONResponse({"data": models, "has_more": False, "first_id": models[0]["id"], "last_id": models[-1]["id"]})
 
 
@@ -1610,6 +1721,7 @@ async def api_update_config(request: Request):
         "deepseek_base_url", "openai_base_url", "custom_base_url",
         "default_backend", "force_model",
         "deepseek_model_map", "openai_model_map", "custom_model_map",
+        "model_aliases", "model_list_mode",
         "deepseek_model_pattern", "openai_model_pattern", "custom_model_pattern",
         "reasoning_content_policy", "inline_image_policy",
     }
@@ -1832,6 +1944,8 @@ async def health():
         "custom_configured": bool(config.custom_api_key and config.custom_base_url),
         "default_backend": config.default_backend,
         "force_model": config.force_model or "(none)",
+        "model_list_mode": config.model_list_mode,
+        "model_aliases": len(normalized_model_aliases(config.model_aliases)),
         "inline_image_policy": config.inline_image_policy,
         "proxy_dir": str(PROXY_DIR),
     }

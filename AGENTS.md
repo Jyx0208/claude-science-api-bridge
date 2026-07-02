@@ -30,9 +30,10 @@ The safe path is:
 2. Set `ANTHROPIC_BASE_URL=http://127.0.0.1:9876`.
 3. Generate a local fake Claude Science OAuth token.
 4. Configure an API key and model mapping in `config.json` or the dashboard.
-5. Set `inline_image_policy=preserve` or `auto` only when the selected backend supports image input.
-6. Start or restart Claude Science.
-7. Verify `/v1/models` and `/v1/messages` reach the proxy and the backend succeeds.
+5. Configure `model_aliases` and `model_list_mode=aliases` so Claude Science can show third-party model names.
+6. Set `inline_image_policy=preserve` or `auto` only when the selected backend supports image input.
+7. Start or restart Claude Science with `scripts/start-claude-science.sh`.
+8. Verify `/v1/models` and `/v1/messages` reach the proxy and the backend succeeds.
 
 ## Repository Map
 
@@ -42,6 +43,9 @@ The safe path is:
 - `install.sh`: safe install, LaunchAgent, global `ANTHROPIC_BASE_URL`.
 - `scripts/doctor.sh`: read-only state inspection.
 - `scripts/install-safe.sh`: safe install entry point for agents.
+- `scripts/patch-daemon-auth.sh`: byte-length-preserving OAuth/profile URL patch for the local daemon copy.
+- `scripts/patch-daemon-models.sh`: byte-length-preserving model picker patch for the local daemon copy.
+- `scripts/start-claude-science.sh`: refreshes token, reapplies daemon patches, and restarts the app.
 - `scripts/verify-proxy.sh`: end-to-end proxy verification after provider config.
 - `scripts/uninstall.sh`: removes LaunchAgent and launchctl env only.
 - `setup-network.sh`: advanced HTTPS interception. Treat as opt-in only.

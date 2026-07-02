@@ -77,6 +77,28 @@ Then inspect:
 curl -sS http://127.0.0.1:9876/api/recent-requests
 ```
 
+## Model Picker Still Shows Opus / Sonnet / Haiku
+
+Claude Science may render its picker from hard-coded strings in the local daemon copy, so `/v1/models` alone is not always enough.
+
+Do not change Clash, DNS, TUN, `/etc/hosts`, system proxy, certificates, or port 443 for this issue.
+
+Run:
+
+```bash
+./scripts/patch-daemon-models.sh
+./scripts/start-claude-science.sh
+curl -sS http://127.0.0.1:9876/v1/models
+```
+
+Expected:
+
+- `/v1/models` returns `byok-model-0001` or other configured aliases.
+- Claude Science model picker shows the configured third-party display name, such as `Kimi K2.6 Pro++`.
+- Requests in `/api/recent-requests` route to the real backend model configured in `model_aliases`.
+
+If the patch script reports an unsupported daemon build, keep the app usable through `ANTHROPIC_BASE_URL` and inspect the current daemon strings before writing a new byte-length-preserving patch. Do not patch `/Applications/Claude Science.app` unless the user explicitly asks.
+
 ## DeepSeek Returns Empty Content
 
 Some reasoning models put early tokens in `reasoning_content`. The proxy supports:

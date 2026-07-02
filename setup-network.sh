@@ -72,6 +72,10 @@ DNS.7 = claude.ai
 DNS.8 = *.anthropic.com
 DNS.9 = *.claude.com
 DNS.10 = *.claude.ai
+DNS.11 = localhost
+DNS.12 = 127.00.00.001
+DNS.13 = 127.000.000.01
+IP.1 = 127.0.0.1
 EOF
     openssl genrsa -out "$SCRIPT_DIR/certs/server-key.pem" 2048
     openssl req -new -key "$SCRIPT_DIR/certs/server-key.pem" \
@@ -147,4 +151,3 @@ launchctl load /Library/LaunchDaemons/com.byok.proxy-forwarder.plist"
     exit 1
     ;;
 esac
-

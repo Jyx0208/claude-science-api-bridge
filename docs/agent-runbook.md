@@ -1,6 +1,7 @@
 # Agent Runbook
 
 This is the main step-by-step guide for an AI agent configuring this project on a user's Mac.
+默认按安全模式执行；不要修改 Clash、VPN、TUN、DNS、系统代理、`/etc/hosts`、系统证书信任或 443 端口。
 
 ## Phase 0: Safety Check
 
@@ -35,8 +36,10 @@ This should:
 1. Install Python dependencies.
 2. Create `config.json` from `config.example.json` if missing.
 3. Generate a fake OAuth token with `setup-token.py`.
-4. Set `ANTHROPIC_BASE_URL=http://127.0.0.1:9876` via `launchctl`.
-5. Install and start a user LaunchAgent for `proxy.py`.
+4. Patch the local daemon copy for OAuth/profile calls when possible.
+5. Patch the local daemon model menu so Claude Science can show BYOK model names.
+6. Set `ANTHROPIC_BASE_URL=http://127.0.0.1:9876` via `launchctl`.
+7. Install and start a user LaunchAgent for `proxy.py`.
 
 The script prefers a project-local `.venv` so it does not depend on global Python packages.
 If `~/.claude-science/encryption.key` does not exist yet, it may open Claude Science once so the app can create local state.
@@ -71,6 +74,15 @@ Generic OpenAI-compatible provider:
   "custom_base_url": "https://provider.example.com",
   "default_backend": "custom",
   "force_model": "provider-model-name",
+  "model_aliases": [
+    {
+      "id": "byok-model-0001",
+      "display_name": "Provider Model",
+      "backend": "custom",
+      "model": "provider-model-name"
+    }
+  ],
+  "model_list_mode": "aliases",
   "inline_image_policy": "auto"
 }
 ```
@@ -85,6 +97,15 @@ For SiliconFlow Kimi:
   "custom_base_url": "https://api.siliconflow.cn",
   "default_backend": "custom",
   "force_model": "Pro/moonshotai/Kimi-K2.6",
+  "model_aliases": [
+    {
+      "id": "byok-model-0001",
+      "display_name": "Kimi K2.6 Pro++",
+      "backend": "custom",
+      "model": "Pro/moonshotai/Kimi-K2.6"
+    }
+  ],
+  "model_list_mode": "aliases",
   "inline_image_policy": "preserve",
   "reasoning_content_policy": "never"
 }
@@ -92,6 +113,26 @@ For SiliconFlow Kimi:
 
 Use `inline_image_policy=preserve` only when the selected model supports image input. Use `omit` for text-only models.
 Keep `reasoning_content_policy=never` unless the user explicitly asks to debug provider reasoning payloads.
+
+## Phase 2.5: Configure Third-Party Model Menu
+
+Claude Science may use hard-coded local daemon model names for the UI. Do not try to solve this with DNS or Clash.
+
+Use `model_aliases` for the proxy and `scripts/patch-daemon-models.sh` for the local daemon menu:
+
+```bash
+./scripts/patch-daemon-models.sh
+```
+
+Expected:
+
+- `config.json` contains `model_list_mode=aliases`.
+- `config.json` contains aliases such as `byok-model-0001`.
+- `/v1/models` returns the alias display names.
+- The daemon binary still passes its executable check.
+
+The model patch only edits `~/.claude-science/bin/claude-science`, not the app bundle in `/Applications`.
+Alias routing has priority over `force_model`, so a selected BYOK alias maps to its own real backend model.
 
 ## Phase 3: Verify Proxy
 
@@ -110,7 +151,7 @@ curl -sS http://127.0.0.1:9876/v1/messages \
 Expected:
 
 - `/health` returns `"status":"ok"`.
-- `/v1/models` returns model objects.
+- `/v1/models` returns third-party alias model objects when `model_list_mode=aliases`.
 - `/v1/messages` returns an Anthropic-style message object.
 - `/api/recent-requests` shows backend `success`.
 - `./scripts/verify-proxy.sh` exits with `proxy verification passed`.
@@ -140,10 +181,10 @@ open -a "Claude Science"
 If it is already running, restart it:
 
 ```bash
-pkill -f "claude-science serve" 2>/dev/null || true
-pkill -f "ClaudeScience" 2>/dev/null || true
-open -a "Claude Science"
+./scripts/start-claude-science.sh
 ```
+
+Prefer `scripts/start-claude-science.sh` because it refreshes fake OAuth token, reapplies auth/model daemon patches, sets `ANTHROPIC_BASE_URL`, and restarts the app.
 
 Verify the daemon:
 

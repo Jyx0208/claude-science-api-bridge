@@ -15,6 +15,7 @@ certs/
 *.plist
 logs/
 *.log
+.daemon-model-patch.json
 
 # Python
 __pycache__/
@@ -27,4 +28,3 @@ venv/
 
 # macOS
 .DS_Store
-
