@@ -40,6 +40,7 @@ The safe path is:
 - `install.sh`: safe install, LaunchAgent, global `ANTHROPIC_BASE_URL`.
 - `scripts/doctor.sh`: read-only state inspection.
 - `scripts/install-safe.sh`: safe install entry point for agents.
+- `scripts/verify-proxy.sh`: end-to-end proxy verification after provider config.
 - `scripts/uninstall.sh`: removes LaunchAgent and launchctl env only.
 - `setup-network.sh`: advanced HTTPS interception. Treat as opt-in only.
 - `docs/agent-runbook.md`: step-by-step procedure for agents.
@@ -53,6 +54,7 @@ The task is complete when all of these pass:
 
 ```bash
 ./scripts/self-test.sh
+./scripts/verify-proxy.sh
 curl -sS http://127.0.0.1:9876/health
 curl -sS http://127.0.0.1:9876/v1/models
 curl -sS http://127.0.0.1:9876/v1/messages \

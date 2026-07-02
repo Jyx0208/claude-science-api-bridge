@@ -21,6 +21,7 @@ pip install -r requirements-dev.txt
 ## Pull Request Checklist
 
 - `./scripts/self-test.sh` passes.
+- If a backend API key is configured on the machine, `./scripts/verify-proxy.sh` passes.
 - Optional: `python3 -m pytest -q` passes.
 - README and `AGENTS.md` still match behavior.
 - No secrets are staged.

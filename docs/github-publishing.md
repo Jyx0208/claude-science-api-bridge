@@ -48,5 +48,10 @@ git diff --cached
 git status --ignored
 ```
 
-Never paste API keys or token contents into GitHub issues.
+If this machine has a backend API key configured and you are validating a real installation, also run:
 
+```bash
+./scripts/verify-proxy.sh
+```
+
+Never paste API keys or token contents into GitHub issues.

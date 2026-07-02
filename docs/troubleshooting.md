@@ -5,6 +5,7 @@
 Check:
 
 ```bash
+./scripts/doctor.sh
 launchctl print gui/$(id -u)/com.byok.claude-science-proxy
 tail -n 120 ~/.claude-science/logs/proxy.log
 tail -n 120 ~/.claude-science/logs/proxy-error.log
@@ -66,3 +67,14 @@ lsof -nP -iTCP:9876 -sTCP:LISTEN
 
 Either stop it or set a different `PROXY_PORT`, then update `ANTHROPIC_BASE_URL`.
 
+## Verification Fails
+
+Run:
+
+```bash
+./scripts/doctor.sh
+./scripts/self-test.sh
+./scripts/verify-proxy.sh
+```
+
+If `verify-proxy.sh` says no backend API key is configured, configure the dashboard or write the key to local `config.json`. Do not commit `config.json`.

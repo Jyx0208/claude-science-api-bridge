@@ -38,6 +38,9 @@ This should:
 4. Set `ANTHROPIC_BASE_URL=http://127.0.0.1:9876` via `launchctl`.
 5. Install and start a user LaunchAgent for `proxy.py`.
 
+The script prefers a project-local `.venv` so it does not depend on global Python packages.
+If `~/.claude-science/encryption.key` does not exist yet, it may open Claude Science once so the app can create local state.
+
 ## Phase 2: Configure Provider
 
 Prefer the dashboard:
@@ -47,6 +50,7 @@ open http://127.0.0.1:9876/dashboard
 ```
 
 For unattended setup, write `config.json` directly. Never echo secrets into chat logs.
+`scripts/install-safe.sh` also accepts provider settings from environment variables and persists them into ignored `config.json`.
 
 Minimum DeepSeek config:
 
@@ -78,6 +82,7 @@ Run:
 
 ```bash
 ./scripts/self-test.sh
+./scripts/verify-proxy.sh
 curl -sS http://127.0.0.1:9876/health
 curl -sS http://127.0.0.1:9876/v1/models
 curl -sS http://127.0.0.1:9876/v1/messages \
@@ -91,6 +96,7 @@ Expected:
 - `/v1/models` returns model objects.
 - `/v1/messages` returns an Anthropic-style message object.
 - `/api/recent-requests` shows backend `success`.
+- `./scripts/verify-proxy.sh` exits with `proxy verification passed`.
 
 ## Phase 4: Start Claude Science
 

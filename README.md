@@ -26,28 +26,73 @@
 
 如果 Claude Science 的某些硬编码 HTTPS 请求必须拦截，可以使用高级模式，但需要先阅读 `docs/network-interception.md`，并由用户明确同意。
 
-## 快速开始
+## 用户怎么使用
 
-```bash
-cd ~/.claude-science/proxy
-./install.sh
-open http://127.0.0.1:9876/dashboard
-```
+普通用户不要自己运行安装命令。推荐做法是：把下面这段 prompt 复制给你的本地 agent，让 agent 阅读仓库、诊断环境、安装、配置并验证。
 
-然后在面板里：
+你只需要准备：
 
-1. 配置 DeepSeek、OpenAI 或 Custom OpenAI-compatible API。
-2. 设置 `default_backend`。
-3. 设置 `force_model` 为你的第三方服务实际支持的模型名。
-4. 启动 Claude Science：
+- 一台 macOS 电脑
+- 已安装 Claude Science
+- 一个 DeepSeek、OpenAI 或其他 OpenAI 兼容 API key
 
-```bash
-open -a "Claude Science"
+## 直接复制给 Agent 的 Prompt
+
+把下面整段发给 Codex、Claude Code 或其他能操作本机终端的 agent：
+
+```text
+请你帮我在这台 macOS 上配置 Claude Science API Bridge，让 Claude Science 使用第三方 OpenAI 兼容 API。
+
+仓库地址：
+https://github.com/Jyx0208/claude-science-api-bridge
+
+目标：
+1. 使用安全模式完成安装和配置。
+2. 让 Claude Science 的 Anthropic API 请求走本地代理 127.0.0.1:9876。
+3. 后端使用我提供的第三方 API。
+4. 完成端到端验证，确认 /v1/models 和 /v1/messages 都成功。
+
+我的后端配置：
+- provider: DeepSeek / OpenAI / Custom（三选一；如果我没写，请先问我）
+- api_key: 我会单独给你；不要把 key 打印到日志或最终回复里
+- base_url: 如果是 DeepSeek 用 https://api.deepseek.com；如果是 OpenAI 用 https://api.openai.com；如果是 Custom 请先问我
+- model: 第三方服务实际支持的模型名；如果我没写，请先问我
+
+安全要求：
+1. 先完整阅读仓库结构，以及 README.md、AGENTS.md、docs/agent-runbook.md、docs/troubleshooting.md、scripts/doctor.sh、scripts/install-safe.sh、scripts/verify-proxy.sh。
+2. 默认只使用安全模式，不要修改 Clash、VPN、TUN、DNS、系统代理、/etc/hosts、系统证书信任或 443 端口。
+3. 不要 reload Clash，不要改任何网络代理配置。
+4. 不要输出、提交、总结或截图我的 API key、OAuth token、证书私钥。
+5. 如果你认为必须使用高级 HTTPS 拦截，必须先停下来解释原因并单独征求我的明确同意。
+
+执行要求：
+1. 如果本机还没有仓库，请 clone 到 ~/.claude-science/proxy；如果已有仓库，请进入该目录并拉取最新 main。
+2. 先运行 ./scripts/doctor.sh 做只读诊断。
+3. 按 AGENTS.md 和 docs/agent-runbook.md 执行安全安装。
+4. 将 API key 和模型配置写入本地 config.json，确保 config.json 不会提交到 Git。
+5. 运行 ./scripts/self-test.sh。
+6. 启动或重启代理服务。
+7. 运行 ./scripts/verify-proxy.sh 做 health、models、messages 和 recent-requests 验证。
+8. 启动或重启 Claude Science。
+9. 再检查 http://127.0.0.1:9876/api/recent-requests，确认 Claude Science 命中了本地代理。
+
+如果遇到问题：
+1. 先运行 ./scripts/doctor.sh。
+2. 阅读 docs/troubleshooting.md。
+3. 优先修安全模式路径。
+4. 不要通过修改 Clash 或系统网络配置来“试一试”。
+
+最终回复请只告诉我：
+1. 是否安装成功。
+2. 使用的 provider、base_url 和模型名，但不要显示 API key。
+3. 验证结果摘要。
+4. Dashboard 地址。
+5. 如果失败，明确卡在哪一步以及下一步需要我提供什么。
 ```
 
 ## 给 Agent 的入口
 
-如果你是 AI agent，请按顺序读取：
+如果你是 AI agent，请不要让用户手动安装。你应该按顺序读取：
 
 1. `AGENTS.md`
 2. `docs/agent-runbook.md`
@@ -61,6 +106,7 @@ open -a "Claude Science"
 ./scripts/doctor.sh
 ./scripts/install-safe.sh
 ./scripts/self-test.sh
+./scripts/verify-proxy.sh
 ```
 
 `doctor.sh` 是只读诊断脚本；agent 应先运行它，不要直接猜测用户机器状态。
@@ -102,9 +148,14 @@ open -a "Claude Science"
 
 `custom_base_url` 可以写成 `https://provider.example.com`，也可以写成 `https://provider.example.com/v1`，代理会自动规范化。
 
-## 验证
+## Agent 验收标准
+
+下面这些命令由 agent 执行，不要求用户自己运行：
 
 ```bash
+./scripts/doctor.sh
+./scripts/self-test.sh
+./scripts/verify-proxy.sh
 curl -sS http://127.0.0.1:9876/health
 curl -sS http://127.0.0.1:9876/v1/models
 curl -sS http://127.0.0.1:9876/v1/messages \
@@ -112,7 +163,7 @@ curl -sS http://127.0.0.1:9876/v1/messages \
   -d '{"model":"claude-sonnet-4-5","max_tokens":32,"messages":[{"role":"user","content":"Reply OK"}]}'
 ```
 
-查看最近请求：
+agent 还应检查最近请求：
 
 ```bash
 curl -sS http://127.0.0.1:9876/api/recent-requests
@@ -137,7 +188,8 @@ curl -sS http://127.0.0.1:9876/api/recent-requests
 │   ├── install-safe.sh
 │   ├── self-test.sh
 │   ├── start-claude-science.sh
-│   └── uninstall.sh
+│   ├── uninstall.sh
+│   └── verify-proxy.sh
 ├── docs/
 │   ├── agent-runbook.md
 │   ├── github-publishing.md
@@ -169,4 +221,3 @@ git status --ignored
 ## 许可证
 
 MIT。见 `LICENSE`。
-
