@@ -21,6 +21,22 @@ launchctl kickstart -k gui/$(id -u)/com.byok.claude-science-proxy
 
 The proxy sanitizes Claude tool schemas before sending them to OpenAI-compatible APIs. If this still appears, capture only the backend error text from `proxy.log`. Do not log full prompts or API keys.
 
+## Tool Call Markers Appear As Text
+
+Some OpenAI-compatible providers may emit native tool-call markers such as:
+
+```text
+<|tool_calls_section_begin|><|tool_call_begin|>functions.python:0<|tool_call_argument_begin|>{...}
+```
+
+The proxy converts these markers into Anthropic `tool_use` blocks in both streaming and non-streaming responses. If the markers still appear in Claude Science:
+
+1. Restart the LaunchAgent so the latest `proxy.py` is running.
+2. Run `./scripts/self-test.sh` and confirm the embedded tool-call tests pass.
+3. Check `http://127.0.0.1:9876/api/recent-requests` to confirm Claude Science is hitting this proxy.
+
+For SiliconFlow Kimi, forced Anthropic tool choices are sent as OpenAI `auto` because the provider only accepts `auto` and `none`. This avoids backend 400 errors while still allowing the model to call tools.
+
 ## SSL Certificate Verify Failed When Proxy Calls Backend
 
 The proxy uses `trust_env=False` for backend HTTP clients so Claude Science CA variables do not affect DeepSeek/OpenAI TLS. If this error appears, confirm the running process is using the latest `proxy.py`.

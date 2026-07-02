@@ -351,12 +351,184 @@ TOOL_NAME_RE = re.compile(r"[^A-Za-z0-9_-]+")
 DATA_IMAGE_RE = re.compile(r"^data:(image/[^;,]+);base64,(.*)$", re.DOTALL)
 JSON_SCHEMA_TYPES = {"string", "number", "integer", "boolean", "object", "array"}
 SCHEMA_COMBINATORS = ("anyOf", "oneOf", "allOf")
+TOOL_CALLS_SECTION_BEGIN = "<|tool_calls_section_begin|>"
+TOOL_CALLS_SECTION_END = "<|tool_calls_section_end|>"
+TOOL_CALL_BEGIN = "<|tool_call_begin|>"
+TOOL_CALL_END = "<|tool_call_end|>"
+TOOL_CALL_ARGUMENT_BEGIN = "<|tool_call_argument_begin|>"
+EMBEDDED_TOOL_MARKERS = (
+    TOOL_CALLS_SECTION_BEGIN,
+    TOOL_CALLS_SECTION_END,
+    TOOL_CALL_BEGIN,
+    TOOL_CALL_END,
+    TOOL_CALL_ARGUMENT_BEGIN,
+)
 
 
 def normalize_tool_name(name, fallback: str) -> str:
     """OpenAI-compatible function names are alphanumeric plus _ and -."""
     cleaned = TOOL_NAME_RE.sub("_", str(name or fallback)).strip("_")
     return (cleaned or fallback)[:64]
+
+
+def build_tool_name_lookup(anthropic_body: dict) -> dict:
+    """Map OpenAI-safe and provider-native tool names back to Claude names."""
+    lookup = {}
+    for idx, tool in enumerate(anthropic_body.get("tools") or []):
+        if not isinstance(tool, dict):
+            continue
+        original = str(tool.get("name", "") or f"tool_{idx}")
+        safe = normalize_tool_name(original, f"tool_{idx}")
+        lookup[original] = original
+        lookup[safe] = original
+        lookup[f"functions.{original}"] = original
+        lookup[f"functions.{safe}"] = original
+        if original.startswith("functions."):
+            short = original.split(".", 1)[1]
+            lookup[short] = original
+            lookup[normalize_tool_name(short, f"tool_{idx}")] = original
+    return lookup
+
+
+def _strip_provider_tool_prefix(name: str) -> str:
+    cleaned = str(name or "").strip()
+    if ":" in cleaned:
+        maybe_name, maybe_index = cleaned.rsplit(":", 1)
+        if maybe_index.strip().isdigit():
+            cleaned = maybe_name.strip()
+    if cleaned.startswith("functions."):
+        cleaned = cleaned.split(".", 1)[1]
+    return cleaned
+
+
+def _resolve_response_tool_name(raw_name: str, fallback: str, tool_name_lookup: Optional[dict] = None) -> str:
+    raw = str(raw_name or "").strip()
+    stripped = _strip_provider_tool_prefix(raw)
+    candidates = [
+        raw,
+        stripped,
+        normalize_tool_name(raw, fallback),
+        normalize_tool_name(stripped, fallback),
+        f"functions.{stripped}" if stripped else "",
+    ]
+    for candidate in candidates:
+        if candidate and tool_name_lookup and candidate in tool_name_lookup:
+            return tool_name_lookup[candidate]
+    return normalize_tool_name(stripped or raw, fallback)
+
+
+def _decode_tool_arguments(raw_arguments: str) -> Optional[dict]:
+    raw = (raw_arguments or "").strip()
+    if not raw:
+        return {}
+    try:
+        value, _ = json.JSONDecoder().raw_decode(raw)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(value, dict):
+        return value
+    return {"value": value}
+
+
+def _find_first_embedded_tool_marker(text: str) -> int:
+    positions = [text.find(marker) for marker in (TOOL_CALLS_SECTION_BEGIN, TOOL_CALL_BEGIN)]
+    positions = [pos for pos in positions if pos >= 0]
+    return min(positions) if positions else -1
+
+
+def _next_marker_position(text: str, start: int) -> tuple[int, str]:
+    found = []
+    for marker in (TOOL_CALL_END, TOOL_CALLS_SECTION_END, TOOL_CALL_BEGIN):
+        pos = text.find(marker, start)
+        if pos >= 0:
+            found.append((pos, marker))
+    return min(found, default=(-1, ""))
+
+
+def _skip_embedded_tool_noise(text: str, pos: int) -> int:
+    while pos < len(text):
+        advanced = False
+        while pos < len(text) and text[pos].isspace():
+            pos += 1
+            advanced = True
+        for marker in (TOOL_CALLS_SECTION_BEGIN, TOOL_CALL_END, TOOL_CALLS_SECTION_END):
+            if text.startswith(marker, pos):
+                pos += len(marker)
+                advanced = True
+                break
+        if not advanced:
+            return pos
+    return pos
+
+
+def extract_embedded_tool_calls(text: str, tool_name_lookup: Optional[dict] = None) -> tuple[str, list[dict]]:
+    """Parse provider-native tool call markers leaked through message.content.
+
+    Some OpenAI-compatible providers stream native text like
+    `<|tool_call_begin|>functions.python:0<|tool_call_argument_begin|>{...}`.
+    Claude Science expects Anthropic `tool_use` blocks instead, so convert
+    complete JSON calls and remove the protocol markers from visible text.
+    """
+    if not isinstance(text, str) or not any(marker in text for marker in EMBEDDED_TOOL_MARKERS):
+        return text or "", []
+
+    first_marker = _find_first_embedded_tool_marker(text)
+    if first_marker < 0:
+        return text or "", []
+
+    clean_parts = [text[:first_marker]]
+    tool_calls = []
+    pos = first_marker
+
+    while pos < len(text):
+        pos = _skip_embedded_tool_noise(text, pos)
+        call_pos = text.find(TOOL_CALL_BEGIN, pos)
+        if call_pos < 0:
+            clean_parts.append(text[pos:])
+            break
+        clean_parts.append(text[pos:call_pos])
+
+        header_start = call_pos + len(TOOL_CALL_BEGIN)
+        args_marker = text.find(TOOL_CALL_ARGUMENT_BEGIN, header_start)
+        if args_marker < 0:
+            break
+
+        raw_name = text[header_start:args_marker].strip()
+        args_start = args_marker + len(TOOL_CALL_ARGUMENT_BEGIN)
+        end_pos, end_marker = _next_marker_position(text, args_start)
+        if end_pos < 0:
+            end_pos, end_marker = len(text), ""
+
+        raw_args = text[args_start:end_pos]
+        arguments = _decode_tool_arguments(raw_args)
+        if arguments is not None:
+            idx = len(tool_calls)
+            tool_calls.append({
+                "id": f"toolu_{uuid.uuid4().hex[:12]}",
+                "name": _resolve_response_tool_name(raw_name, f"tool_{idx}", tool_name_lookup),
+                "input": arguments,
+            })
+
+        pos = end_pos + len(end_marker)
+
+    return "".join(clean_parts).strip(), tool_calls
+
+
+def _find_marker_start_in_buffer(text: str) -> int:
+    return _find_first_embedded_tool_marker(text)
+
+
+def _flushable_text_prefix(text: str) -> tuple[str, str]:
+    """Keep possible marker prefixes buffered so split stream chunks are detected."""
+    max_keep = 0
+    for marker in (TOOL_CALLS_SECTION_BEGIN, TOOL_CALL_BEGIN):
+        limit = min(len(marker) - 1, len(text))
+        for size in range(1, limit + 1):
+            if marker.startswith(text[-size:]):
+                max_keep = max(max_keep, size)
+    if max_keep:
+        return text[:-max_keep], text[-max_keep:]
+    return text, ""
 
 
 def _pick_schema_type(value):
@@ -474,6 +646,10 @@ def _siliconflow_needs_jpeg_data_url(backend_name: str, backend_base_url: str) -
     return backend_name == "custom" and "siliconflow" in (backend_base_url or "").lower()
 
 
+def _is_siliconflow_backend(backend_name: str, backend_base_url: str) -> bool:
+    return backend_name == "custom" and "siliconflow" in (backend_base_url or "").lower()
+
+
 def _convert_inline_image_to_jpeg_url(url: str, backend_name: str, backend_base_url: str) -> str:
     """Convert inline data images to JPEG for providers that reject PNG data URLs."""
     if not (_is_inline_image_url(url) and _siliconflow_needs_jpeg_data_url(backend_name, backend_base_url)):
@@ -540,6 +716,32 @@ def _image_policy_for_backend(backend_name: str, backend_base_url: str) -> str:
     if backend_name == "deepseek":
         return "omit"
     return "preserve"
+
+
+def _convert_tool_choice(tool_choice, tool_name_map: dict, backend_name: str, backend_base_url: str):
+    """Translate Anthropic tool_choice while avoiding provider-specific 400s."""
+    if not tool_choice or backend_name == "deepseek":
+        return None
+
+    choice_type = tool_choice.get("type") if isinstance(tool_choice, dict) else tool_choice
+
+    # SiliconFlow Kimi currently accepts only auto/none for tool_choice.
+    if _is_siliconflow_backend(backend_name, backend_base_url):
+        return "none" if choice_type == "none" else "auto"
+
+    if isinstance(tool_choice, dict) and choice_type == "tool":
+        choice_name = str(tool_choice.get("name", ""))
+        return {
+            "type": "function",
+            "function": {"name": tool_name_map.get(choice_name, normalize_tool_name(choice_name, "tool_0"))},
+        }
+    if choice_type == "any":
+        return "required"
+    if choice_type == "auto":
+        return "auto"
+    if choice_type == "none":
+        return "none"
+    return None
 
 
 def anthropic_to_openai(
@@ -697,22 +899,19 @@ def anthropic_to_openai(
         if openai_tools:
             openai_body["tools"] = openai_tools
             tool_choice = anthropic_body.get("tool_choice")
-            if tool_choice and backend_name != "deepseek":
-                if isinstance(tool_choice, dict) and tool_choice.get("type") == "tool":
-                    choice_name = str(tool_choice.get("name", ""))
-                    openai_body["tool_choice"] = {
-                        "type": "function",
-                        "function": {"name": tool_name_map.get(choice_name, normalize_tool_name(choice_name, "tool_0"))},
-                    }
-                elif tool_choice == "any":
-                    openai_body["tool_choice"] = "required"
-                elif tool_choice == "auto":
-                    openai_body["tool_choice"] = "auto"
+            converted_choice = _convert_tool_choice(tool_choice, tool_name_map, backend_name, backend_base_url)
+            if converted_choice:
+                openai_body["tool_choice"] = converted_choice
 
     return openai_body
 
 
-def openai_to_anthropic_response(openai_resp: dict, original_model: str, request_id: str) -> dict:
+def openai_to_anthropic_response(
+    openai_resp: dict,
+    original_model: str,
+    request_id: str,
+    tool_name_lookup: Optional[dict] = None,
+) -> dict:
     choice = openai_resp.get("choices", [{}])[0]
     message = choice.get("message", {})
     content_blocks = []
@@ -726,20 +925,34 @@ def openai_to_anthropic_response(openai_resp: dict, original_model: str, request
         text_content = normal_content or reasoning_content
     else:
         text_content = normal_content
+    text_content, embedded_tool_calls = extract_embedded_tool_calls(text_content, tool_name_lookup)
     if text_content:
         content_blocks.append({"type": "text", "text": text_content})
 
+    has_tool_use = False
     for tc in message.get("tool_calls") or []:
         func = tc.get("function", {})
         try:
             arguments = json.loads(func.get("arguments", "{}"))
         except json.JSONDecodeError:
             arguments = {"_raw": func.get("arguments", "{}")}
+        if not isinstance(arguments, dict):
+            arguments = {"value": arguments}
+        has_tool_use = True
         content_blocks.append({
             "type": "tool_use",
             "id": tc.get("id", f"toolu_{uuid.uuid4().hex[:12]}"),
-            "name": func.get("name", ""),
+            "name": _resolve_response_tool_name(func.get("name", ""), "tool_0", tool_name_lookup),
             "input": arguments,
+        })
+
+    for embedded_call in embedded_tool_calls:
+        has_tool_use = True
+        content_blocks.append({
+            "type": "tool_use",
+            "id": embedded_call["id"],
+            "name": embedded_call["name"],
+            "input": embedded_call["input"],
         })
 
     usage = openai_resp.get("usage", {})
@@ -749,7 +962,7 @@ def openai_to_anthropic_response(openai_resp: dict, original_model: str, request
         "role": "assistant",
         "content": content_blocks,
         "model": original_model,
-        "stop_reason": _map_finish_reason(choice.get("finish_reason", "stop")),
+        "stop_reason": "tool_use" if has_tool_use else _map_finish_reason(choice.get("finish_reason", "stop")),
         "stop_sequence": None,
         "usage": {"input_tokens": usage.get("prompt_tokens", 0), "output_tokens": usage.get("completion_tokens", 0)},
     }
@@ -764,15 +977,122 @@ def _map_finish_reason(r: str) -> str:
 # Streaming translation
 # ---------------------------------------------------------------------------
 
-async def translate_stream(openai_stream, original_model: str, request_id: str):
+async def translate_stream(
+    openai_stream,
+    original_model: str,
+    request_id: str,
+    tool_name_lookup: Optional[dict] = None,
+):
     tool_calls_map: dict[int, dict] = {}
     finish_reason = None
     output_tokens = 0
     message_started = False
     content_block_started = False
+    content_block_stopped = False
+    content_block_index: Optional[int] = None
+    next_block_index = 0
+    pending_text = ""
+    capturing_embedded_tools = False
+    embedded_tool_text = ""
 
     def ev(t: str, d: dict) -> str:
         return f"event: {t}\ndata: {json.dumps(d)}\n\n"
+
+    def message_start_event() -> str:
+        return ev("message_start", {
+            "type": "message_start",
+            "message": {
+                "id": request_id, "type": "message", "role": "assistant",
+                "content": [], "model": original_model,
+                "stop_reason": None, "stop_sequence": None,
+                "usage": {"input_tokens": 0, "output_tokens": 0},
+            },
+        })
+
+    def text_delta_events(text: str) -> list[str]:
+        nonlocal content_block_started, content_block_stopped, content_block_index, next_block_index
+        if not text:
+            return []
+        events = []
+        if not content_block_started or content_block_stopped:
+            content_block_started = True
+            content_block_stopped = False
+            content_block_index = next_block_index
+            next_block_index += 1
+            events.append(ev("content_block_start", {
+                "type": "content_block_start",
+                "index": content_block_index,
+                "content_block": {"type": "text", "text": ""},
+            }))
+        events.append(ev("content_block_delta", {
+            "type": "content_block_delta",
+            "index": content_block_index,
+            "delta": {"type": "text_delta", "text": text},
+        }))
+        return events
+
+    def buffered_text_events(text_delta: str) -> list[str]:
+        nonlocal pending_text, capturing_embedded_tools, embedded_tool_text
+        if not text_delta:
+            return []
+        if capturing_embedded_tools:
+            embedded_tool_text += text_delta
+            return []
+
+        pending_text += text_delta
+        marker_pos = _find_marker_start_in_buffer(pending_text)
+        if marker_pos >= 0:
+            prefix = pending_text[:marker_pos]
+            embedded_tool_text = pending_text[marker_pos:]
+            pending_text = ""
+            capturing_embedded_tools = True
+            return text_delta_events(prefix)
+
+        flush_text, pending_text = _flushable_text_prefix(pending_text)
+        return text_delta_events(flush_text)
+
+    def finalize_pending_text_events() -> tuple[list[str], list[dict]]:
+        nonlocal pending_text, embedded_tool_text
+        events = []
+        embedded_calls = []
+        if pending_text:
+            events.extend(text_delta_events(pending_text))
+            pending_text = ""
+        if embedded_tool_text:
+            clean_text, embedded_calls = extract_embedded_tool_calls(embedded_tool_text, tool_name_lookup)
+            embedded_tool_text = ""
+            if clean_text:
+                events.extend(text_delta_events(clean_text))
+        return events, embedded_calls
+
+    def start_tool_block_events(tool_call: dict, block_index: int) -> list[str]:
+        return [ev("content_block_start", {
+            "type": "content_block_start",
+            "index": block_index,
+            "content_block": {
+                "type": "tool_use",
+                "id": tool_call["id"],
+                "name": tool_call["name"],
+                "input": {},
+            },
+        })]
+
+    def embedded_tool_events(tool_calls: list[dict]) -> list[str]:
+        nonlocal next_block_index
+        events = []
+        for tool_call in tool_calls:
+            block_index = next_block_index
+            next_block_index += 1
+            events.extend(start_tool_block_events(tool_call, block_index))
+            arguments = json.dumps(tool_call.get("input", {}), ensure_ascii=False)
+            if arguments:
+                events.append(ev("content_block_delta", {
+                    "type": "content_block_delta",
+                    "index": block_index,
+                    "delta": {"type": "input_json_delta", "partial_json": arguments},
+                }))
+            events.append(ev("content_block_stop", {"type": "content_block_stop", "index": block_index}))
+        return events
 
     async for line in openai_stream.aiter_lines():
         if not line or not line.startswith("data: "):
@@ -799,56 +1119,78 @@ async def translate_stream(openai_stream, original_model: str, request_id: str):
 
         if not message_started:
             message_started = True
-            yield ev("message_start", {
-                "type": "message_start",
-                "message": {
-                    "id": request_id, "type": "message", "role": "assistant",
-                    "content": [], "model": original_model,
-                    "stop_reason": None, "stop_sequence": None,
-                    "usage": {"input_tokens": 0, "output_tokens": 0},
-                },
-            })
+            yield message_start_event()
 
         text_delta = delta.get("content", "") or ""
         if not text_delta and config.reasoning_content_policy != "never":
             text_delta = delta.get("reasoning_content", "") or ""
         if text_delta:
-            if not content_block_started:
-                content_block_started = True
-                yield ev("content_block_start", {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}})
-            yield ev("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text_delta}})
+            for event in buffered_text_events(text_delta):
+                yield event
 
         for tc_delta in delta.get("tool_calls") or []:
             idx = tc_delta.get("index", 0)
             func_delta = tc_delta.get("function", {})
             if idx not in tool_calls_map:
-                tool_calls_map[idx] = {"id": tc_delta.get("id", ""), "name": func_delta.get("name", ""), "arguments": ""}
-                yield ev("content_block_start", {
-                    "type": "content_block_start", "index": idx + 1,
-                    "content_block": {"type": "tool_use", "id": tool_calls_map[idx]["id"], "name": tool_calls_map[idx]["name"], "input": {}},
-                })
+                if content_block_started and not content_block_stopped:
+                    yield ev("content_block_stop", {"type": "content_block_stop", "index": content_block_index})
+                    content_block_stopped = True
+                tool_calls_map[idx] = {
+                    "id": tc_delta.get("id", "") or f"toolu_{uuid.uuid4().hex[:12]}",
+                    "name": _resolve_response_tool_name(func_delta.get("name", ""), f"tool_{idx}", tool_name_lookup),
+                    "arguments": "",
+                    "block_index": next_block_index,
+                }
+                next_block_index += 1
+                start_events = start_tool_block_events(tool_calls_map[idx], tool_calls_map[idx]["block_index"])
+                for event in start_events:
+                    yield event
             if func_delta.get("name"):
-                tool_calls_map[idx]["name"] = func_delta["name"]
+                tool_calls_map[idx]["name"] = _resolve_response_tool_name(func_delta["name"], f"tool_{idx}", tool_name_lookup)
             if tc_delta.get("id"):
                 tool_calls_map[idx]["id"] = tc_delta["id"]
             if func_delta.get("arguments"):
                 tool_calls_map[idx]["arguments"] += func_delta["arguments"]
-                yield ev("content_block_delta", {"type": "content_block_delta", "index": idx + 1, "delta": {"type": "input_json_delta", "partial_json": func_delta["arguments"]}})
+                yield ev("content_block_delta", {
+                    "type": "content_block_delta",
+                    "index": tool_calls_map[idx]["block_index"],
+                    "delta": {"type": "input_json_delta", "partial_json": func_delta["arguments"]},
+                })
 
         if finish_reason:
-            if content_block_started:
-                yield ev("content_block_stop", {"type": "content_block_stop", "index": 0})
+            final_text_events, embedded_calls = finalize_pending_text_events()
+            for event in final_text_events:
+                yield event
+            if content_block_started and not content_block_stopped:
+                yield ev("content_block_stop", {"type": "content_block_stop", "index": content_block_index})
+                content_block_stopped = True
+            for event in embedded_tool_events(embedded_calls):
+                yield event
             for idx in sorted(tool_calls_map.keys()):
-                yield ev("content_block_delta", {"type": "content_block_delta", "index": idx + 1, "delta": {"type": "input_json_delta", "partial_json": ""}})
-                yield ev("content_block_stop", {"type": "content_block_stop", "index": idx + 1})
-            yield ev("message_delta", {"type": "message_delta", "delta": {"stop_reason": _map_finish_reason(finish_reason), "stop_sequence": None}, "usage": {"output_tokens": output_tokens}})
+                block_index = tool_calls_map[idx]["block_index"]
+                yield ev("content_block_delta", {"type": "content_block_delta", "index": block_index, "delta": {"type": "input_json_delta", "partial_json": ""}})
+                yield ev("content_block_stop", {"type": "content_block_stop", "index": block_index})
+            has_tool_use = bool(tool_calls_map) or bool(embedded_calls)
+            stop_reason = "tool_use" if has_tool_use else _map_finish_reason(finish_reason)
+            yield ev("message_delta", {"type": "message_delta", "delta": {"stop_reason": stop_reason, "stop_sequence": None}, "usage": {"output_tokens": output_tokens}})
             yield ev("message_stop", {"type": "message_stop"})
             break
 
     if message_started and not finish_reason:
-        if content_block_started:
-            yield ev("content_block_stop", {"type": "content_block_stop", "index": 0})
-        yield ev("message_delta", {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": None}, "usage": {"output_tokens": output_tokens}})
+        final_text_events, embedded_calls = finalize_pending_text_events()
+        for event in final_text_events:
+            yield event
+        if content_block_started and not content_block_stopped:
+            yield ev("content_block_stop", {"type": "content_block_stop", "index": content_block_index})
+            content_block_stopped = True
+        for event in embedded_tool_events(embedded_calls):
+            yield event
+        for idx in sorted(tool_calls_map.keys()):
+            block_index = tool_calls_map[idx]["block_index"]
+            yield ev("content_block_delta", {"type": "content_block_delta", "index": block_index, "delta": {"type": "input_json_delta", "partial_json": ""}})
+            yield ev("content_block_stop", {"type": "content_block_stop", "index": block_index})
+        stop_reason = "tool_use" if tool_calls_map or embedded_calls else "end_turn"
+        yield ev("message_delta", {"type": "message_delta", "delta": {"stop_reason": stop_reason, "stop_sequence": None}, "usage": {"output_tokens": output_tokens}})
         yield ev("message_stop", {"type": "message_stop"})
 
 
@@ -868,6 +1210,7 @@ async def messages_api(request: Request):
 
     stream = body.get("stream", False)
     request_id = f"msg_{uuid.uuid4().hex[:16]}"
+    tool_name_lookup = build_tool_name_lookup(body)
     openai_body = anthropic_to_openai(body, backend["model"], backend["backend"], backend["base_url"])
 
     print(f"[proxy] → {backend['backend']} | model={backend['model']} | "
@@ -893,7 +1236,7 @@ async def messages_api(request: Request):
                         yield f"event: error\ndata: {json.dumps({'type':'error','error':{'type':'api_error','message':safe_msg}})}\n\n"
                         return
                     log_request(backend["backend"], backend["model"], True, "success")
-                    async for event in translate_stream(backend_resp, original_model, request_id):
+                    async for event in translate_stream(backend_resp, original_model, request_id, tool_name_lookup):
                         yield event
             except Exception as e:
                 log_request(backend["backend"], backend["model"], True, "error")
@@ -911,7 +1254,7 @@ async def messages_api(request: Request):
                 safe_msg = f"Backend returned {resp.status_code}: {err_text}".encode("ascii", errors="replace").decode("ascii")
                 return JSONResponse({"type": "error", "error": {"type": "api_error", "message": safe_msg}}, status_code=resp.status_code)
             log_request(backend["backend"], backend["model"], False, "success")
-            return JSONResponse(openai_to_anthropic_response(resp.json(), original_model, request_id))
+            return JSONResponse(openai_to_anthropic_response(resp.json(), original_model, request_id, tool_name_lookup))
         except Exception as e:
             log_request(backend["backend"], backend["model"], False, "error")
             safe_msg = str(e).encode("ascii", errors="replace").decode("ascii")
