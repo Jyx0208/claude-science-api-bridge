@@ -12,9 +12,20 @@
 由维护者或 agent 执行：
 
 ```bash
+printf '0.2.6\n' > VERSION
 ./scripts/build-macos-release.sh
 ./scripts/smoke-test-release-package.sh
 ```
+
+`packaging/macos/build-release.sh` 会把 `VERSION` 写入 `Info.plist`，代理也会在 `/health` 和 Dashboard 中显示同一个版本。发布 GitHub Release 后，已安装用户的 Dashboard 会检查 Latest Release，并在发现更高版本时显示更新提醒和“一键更新”按钮。
+
+一键更新依赖 GitHub Release 里存在这个 DMG asset：
+
+```text
+Claude.Science.API.Bridge.dmg
+```
+
+如果 GitHub API 暂时限流，Dashboard 会回退到 `releases/latest/download/Claude.Science.API.Bridge.dmg`，所以发布时请保持 asset 文件名稳定。
 
 输出：
 

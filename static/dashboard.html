@@ -3,1315 +3,1430 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Claude Science API Bridge</title>
+<title>Claude Science API Bridge · 控制台</title>
 <style>
   :root {
-    --bg: #0d1117;
-    --surface: #161b22;
-    --border: #30363d;
-    --text: #e6edf3;
-    --text-dim: #8b949e;
-    --accent: #58a6ff;
-    --accent-hover: #79c0ff;
-    --green: #3fb950;
-    --red: #f85149;
-    --yellow: #d2991d;
-    --purple: #a371f7;
-    --radius: 8px;
+    --bg: #f4f4f6;
+    --panel: #ffffff;
+    --panel-2: #fafafc;
+    --panel-3: #f1f1f4;
+    --border: #e0e0e5;
+    --border-strong: #cfcfd6;
+    --text: #1d1d1f;
+    --text-dim: #6b6b72;
+    --text-faint: #9a9aa2;
+    --accent: #007aff;
+    --accent-soft: rgba(0,122,255,0.10);
+    --accent-text: #0060df;
+    --green: #248a3d;
+    --green-dot: #34c759;
+    --green-soft: rgba(52,199,89,0.14);
+    --red: #d70015;
+    --red-dot: #ff3b30;
+    --red-soft: rgba(255,59,48,0.12);
+    --amber: #a15c00;
+    --amber-dot: #ff9500;
+    --amber-soft: rgba(255,149,0,0.14);
+    --mono: 'SF Mono','SFMono-Regular','Menlo','Monaco','Consolas',monospace;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 6px 20px rgba(0,0,0,0.05);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    --shadow-lg: 0 12px 48px rgba(0,0,0,0.18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a1c; --panel: #2a2a2d; --panel-2: #242427; --panel-3: #313135;
+      --border: #3a3a3e; --border-strong: #48484d;
+      --text: #f2f2f4; --text-dim: #a0a0a8; --text-faint: #78787f;
+      --accent: #0a84ff; --accent-soft: rgba(10,132,255,0.16); --accent-text: #4aa3ff;
+      --green: #32d74b; --green-dot: #32d74b; --green-soft: rgba(50,215,75,0.16);
+      --red: #ff453a; --red-dot: #ff453a; --red-soft: rgba(255,69,58,0.16);
+      --amber: #ffb340; --amber-dot: #ff9f0a; --amber-soft: rgba(255,159,10,0.16);
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+      --shadow-lg: 0 16px 56px rgba(0,0,0,0.6);
+    }
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    line-height: 1.5;
-    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5; font-size: 14px; -webkit-font-smoothing: antialiased;
   }
-  .container { max-width: 900px; margin: 0 auto; padding: 24px 20px; }
+  a { color: var(--accent-text); text-decoration: none; }
+  code { font-family: var(--mono); font-size: 0.9em; background: var(--panel-3); padding: 1px 5px; border-radius: 4px; }
 
-  /* Header */
-  .header {
-    display: flex; align-items: center; gap: 16px; margin-bottom: 28px;
-    padding: 20px; background: var(--surface); border-radius: var(--radius);
-    border: 1px solid var(--border);
+  .app { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 232px; flex-shrink: 0; background: var(--panel-2); border-right: 1px solid var(--border);
+    padding: 18px 14px; display: flex; flex-direction: column; gap: 4px;
+    position: sticky; top: 0; height: 100vh; overflow-y: auto;
   }
-  .header-icon { font-size: 36px; }
-  .header-info { flex: 1; }
-  .header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
-  .header .subtitle { color: var(--text-dim); font-size: 13px; margin-top: 2px; }
-  .status-badge {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600;
+  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 16px; }
+  .brand-mark {
+    width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+    background: linear-gradient(150deg, var(--accent), #5e5ce6);
+    display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 15px;
   }
-  .status-running { background: #1a3a1f; color: var(--green); border: 1px solid #2a5a2f; }
-  .status-stopped { background: #3a1a1a; color: var(--red); border: 1px solid #5a2a2a; }
-  .status-dot { width: 8px; height: 8px; border-radius: 50%; }
-  .status-running .status-dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
-  .status-stopped .status-dot { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .brand-text h1 { font-size: 14px; font-weight: 650; letter-spacing: -0.2px; line-height: 1.2; }
+  .brand-text span { font-size: 11px; color: var(--text-faint); }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border-radius: var(--radius-sm);
+    border: none; background: none; color: var(--text-dim); font-size: 13.5px; font-weight: 500; font-family: inherit;
+    cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s;
+  }
+  .nav-item:hover { background: var(--panel-3); color: var(--text); }
+  .nav-item.active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+  .nav-item .ico { width: 17px; text-align: center; font-size: 14px; opacity: 0.9; }
+  .nav-item .badge { margin-left: auto; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 10px; background: var(--panel-3); color: var(--text-dim); }
+  .nav-item.active .badge { background: var(--accent); color: #fff; }
+  .sidebar-foot { margin-top: auto; padding: 12px 8px 2px; font-size: 11px; color: var(--text-faint); }
 
-  /* Cards */
-  .card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 20px; margin-bottom: 16px;
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .statusbar {
+    position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 11px 22px; background: color-mix(in srgb, var(--panel) 88%, transparent);
+    backdrop-filter: saturate(180%) blur(16px); -webkit-backdrop-filter: saturate(180%) blur(16px); border-bottom: 1px solid var(--border);
   }
-  .card-header {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 16px;
-  }
-  .card-title {
-    font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px;
-  }
-  .card-title .icon { font-size: 18px; }
+  .stat { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--border); font-size: 12.5px; min-width: 0; max-width: 100%; }
+  .stat .k { color: var(--text-faint); font-size: 11px; }
+  .stat .v { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+  .stat.mono .v { font-family: var(--mono); font-weight: 500; font-size: 11.5px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--text-faint); }
+  .dot.on { background: var(--green-dot); box-shadow: 0 0 0 3px var(--green-soft); }
+  .dot.off { background: var(--red-dot); box-shadow: 0 0 0 3px var(--red-soft); }
+  .statusbar .spacer { flex: 1; }
 
-  /* Form elements */
-  .form-group { margin-bottom: 14px; }
-  .form-group:last-child { margin-bottom: 0; }
-  label {
-    display: block; font-size: 12px; font-weight: 600; color: var(--text-dim);
-    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
+  .update-banner {
+    display: none; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+    max-width: 1080px; width: calc(100% - 44px); margin: 16px auto 0; padding: 13px 16px;
+    border: 1px solid transparent; border-radius: var(--radius); background: var(--amber-soft); color: var(--text);
   }
-  input[type="text"], input[type="password"], select {
-    width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 6px; color: var(--text); font-size: 13px; font-family: inherit;
-    transition: border-color 0.2s;
+  .update-banner.show { display: flex; }
+  .update-banner strong { display: block; font-size: 14px; margin-bottom: 2px; }
+  .update-banner .msg { font-size: 12.5px; color: var(--text-dim); }
+  .update-banner .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .mini-log {
+    margin-top: 8px; padding: 8px 10px; border-radius: 8px; max-height: 140px; overflow: auto;
+    background: var(--panel-3); color: var(--text-dim); font-family: var(--mono); font-size: 11px; line-height: 1.45;
+    white-space: pre-wrap; word-break: break-word;
   }
-  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(88,166,255,0.15); }
-  select { cursor: pointer; }
-  .input-row { display: flex; gap: 8px; }
-  .input-row input { flex: 1; }
 
-  /* Buttons */
+  .view { padding: 22px; max-width: 1080px; width: 100%; margin: 0 auto; display: none; }
+  .view.active { display: block; }
+  .view-head { margin-bottom: 18px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .view-head h2 { font-size: 21px; font-weight: 700; letter-spacing: -0.4px; }
+  .view-head p { color: var(--text-dim); font-size: 13px; margin-top: 3px; }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); margin-bottom: 16px; overflow: hidden; }
+  .panel-head { display: flex; align-items: center; gap: 10px; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .panel-head.no-border { border-bottom: none; }
+  .panel-title { font-size: 14px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+  .panel-title .ico { color: var(--text-dim); }
+  .panel-sub { font-size: 12px; color: var(--text-dim); font-weight: 400; }
+  .panel-body { padding: 18px; }
+  .panel-body.tight { padding: 6px 8px; }
+  .section-divider { height: 1px; background: var(--border); margin: 4px 0; }
+
+  /* ── Current-provider banner ── */
+  .now-bar {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow-sm); padding: 14px 18px; margin-bottom: 20px;
+  }
+  .now-main { display: flex; align-items: center; gap: 13px; min-width: 0; flex: 1; }
+  .now-glyph { width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; color: #fff; background: linear-gradient(150deg, var(--accent), #5e5ce6); }
+  .now-info { min-width: 0; }
+  .now-info .lab { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.4px; }
+  .now-info .name { font-size: 16px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .now-info .sub { font-size: 12px; color: var(--text-dim); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .now-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .kv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .kv { min-width: 0; }
+  .kv .k { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px; }
+  .kv .v { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kv .v.mono { font-family: var(--mono); font-weight: 500; font-size: 12.5px; }
+
   .btn {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600;
-    cursor: pointer; border: 1px solid transparent; transition: all 0.15s;
-    font-family: inherit; white-space: nowrap;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 14px; border-radius: 8px;
+    font-size: 13px; font-weight: 550; cursor: pointer; border: 1px solid var(--border-strong); background: var(--panel);
+    color: var(--text); font-family: inherit; white-space: nowrap; transition: all 0.12s; box-shadow: var(--shadow-sm);
   }
-  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .btn-primary:hover { background: var(--accent-hover); }
-  .btn-outline { background: transparent; color: var(--text); border-color: var(--border); }
-  .btn-outline:hover { background: rgba(255,255,255,0.05); }
-  .btn-danger { background: transparent; color: var(--red); border-color: var(--red); }
-  .btn-danger:hover { background: rgba(248,81,73,0.1); }
-  .btn-sm { padding: 5px 12px; font-size: 12px; }
-  .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn:hover { background: var(--panel-3); }
+  .btn:active { transform: translateY(0.5px); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
+  .btn.ghost { background: transparent; border-color: transparent; box-shadow: none; }
+  .btn.ghost:hover { background: var(--panel-3); }
+  .btn.danger { color: var(--red); border-color: transparent; background: transparent; box-shadow: none; }
+  .btn.danger:hover { background: var(--red-soft); }
+  .btn.sm { padding: 5px 11px; font-size: 12px; }
+  .btn.icon { padding: 6px 8px; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
 
-  /* Toast */
-  .toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; }
-  .toast {
-    padding: 10px 18px; border-radius: 6px; margin-bottom: 8px;
-    font-size: 13px; font-weight: 500; animation: slideIn 0.25s ease;
-    max-width: 360px;
+  .field { margin-bottom: 14px; }
+  .field:last-child { margin-bottom: 0; }
+  .field > label { display: block; font-size: 12px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; }
+  .field .hint { font-size: 11.5px; color: var(--text-faint); margin-top: 5px; }
+  input[type=text], input[type=password], input[type=number], select, textarea {
+    width: 100%; padding: 8px 11px; background: var(--panel-2); border: 1px solid var(--border-strong);
+    border-radius: 8px; color: var(--text); font-size: 13px; font-family: inherit; transition: border-color 0.12s, box-shadow 0.12s;
   }
-  .toast-success { background: #1a3a1f; color: var(--green); border: 1px solid #2a5a2f; }
-  .toast-error { background: #3a1a1a; color: var(--red); border: 1px solid #5a2a2a; }
-  .toast-info { background: #1a2035; color: var(--accent); border: 1px solid #2a3055; }
-  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  textarea { font-family: var(--mono); font-size: 12px; line-height: 1.55; resize: vertical; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  select { cursor: pointer; -webkit-appearance: none; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%236b6b72' d='M5 6L0 0h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 11px center; padding-right: 30px; }
+  .input-inline { display: flex; gap: 8px; }
+  .input-inline > input, .input-inline > select { flex: 1; min-width: 0; }
+  .grid-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
 
-  /* Request log */
-  .log-list { max-height: 250px; overflow-y: auto; }
-  .log-entry {
-    display: flex; align-items: center; gap: 10px;
-    padding: 6px 10px; border-radius: 4px; font-size: 12px;
-    font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
-    border-bottom: 1px solid rgba(48,54,61,0.5);
-  }
-  .log-entry:last-child { border-bottom: none; }
-  .log-time { color: var(--text-dim); min-width: 70px; }
-  .log-backend { font-weight: 600; min-width: 70px; }
-  .log-backend.deepseek { color: #58a6ff; }
-  .log-backend.openai { color: #3fb950; }
-  .log-backend.custom { color: #d29922; }
-  .log-model { color: var(--text-dim); flex: 1; }
-  .log-status { min-width: 40px; text-align: right; }
-  .log-status.success { color: var(--green); }
-  .log-status.error { color: var(--red); }
-  .log-empty { color: var(--text-dim); text-align: center; padding: 30px; font-size: 13px; }
+  .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+  .toolbar .search { flex: 1; min-width: 180px; position: relative; }
+  .toolbar .search input { padding-left: 32px; }
+  .toolbar .search::before { content: "⌕"; position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-faint); font-size: 16px; }
 
-  .model-list {
-    max-height: 220px; overflow-y: auto; border: 1px solid var(--border);
-    border-radius: 6px; background: var(--bg);
-  }
-  .model-row {
-    display: flex; align-items: center; gap: 8px; padding: 7px 10px;
-    border-bottom: 1px solid rgba(48,54,61,0.55); font-size: 12px;
-  }
-  .model-row:last-child { border-bottom: none; }
-  .model-row input { width: auto; }
-  .model-id { font-family: 'SF Mono', 'Monaco', 'Menlo', monospace; flex: 1; word-break: break-all; }
-  .model-owner { color: var(--text-dim); font-size: 11px; }
+  .tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid var(--border-strong); color: var(--text-dim); background: var(--panel-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag.green { color: var(--green); border-color: transparent; background: var(--green-soft); }
+  .tag.blue { color: var(--accent-text); border-color: transparent; background: var(--accent-soft); }
+  .tag.amber { color: var(--amber); border-color: transparent; background: var(--amber-soft); }
+  .tag.red { color: var(--red); border-color: transparent; background: var(--red-soft); }
+  .tag.solid-green { background: var(--green-dot); color: #fff; border-color: transparent; }
 
-  .switch-hero {
-    display: grid; grid-template-columns: 1.25fr 1fr; gap: 12px;
-    margin-bottom: 16px;
+  /* ── Provider switch list (cc-switch style) ── */
+  .prov-list { display: flex; flex-direction: column; gap: 10px; }
+  .prov {
+    display: flex; align-items: center; gap: 14px; padding: 14px 16px; cursor: pointer;
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow-sm); transition: border-color 0.12s, box-shadow 0.12s, background 0.12s;
   }
-  .switch-panel {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 16px;
-  }
-  .mode-seg {
-    display: inline-flex; padding: 3px; background: var(--bg);
-    border: 1px solid var(--border); border-radius: 8px; gap: 3px;
-  }
-  .seg-btn {
-    border: none; border-radius: 6px; background: transparent; color: var(--text-dim);
-    padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: default;
-  }
-  .seg-btn.active { background: var(--accent); color: white; }
-  .switch-kv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
-  .kv-item { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 9px 10px; min-width: 0; }
-  .kv-label { color: var(--text-dim); font-size: 11px; margin-bottom: 3px; }
-  .kv-value { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .model-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
-  .chip {
-    display: inline-flex; align-items: center; max-width: 100%;
-    padding: 4px 8px; border: 1px solid var(--border); border-radius: 999px;
-    background: var(--bg); color: var(--text); font-size: 11px;
-  }
-  .provider-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
-  .provider-toolbar input { flex: 1; }
-  .provider-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .switch-card {
-    border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
-    padding: 13px; position: relative;
-  }
-  .switch-card.active { border-color: var(--green); box-shadow: inset 0 0 0 1px rgba(63,185,80,0.35); }
-  .switch-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-  .switch-card-title { font-size: 14px; font-weight: 800; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .switch-card-meta { color: var(--text-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .switch-card-models { display: flex; gap: 5px; flex-wrap: wrap; min-height: 24px; margin: 10px 0; }
-  .mini-badge {
-    display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid var(--border);
-    padding: 2px 7px; font-size: 10.5px; color: var(--text-dim); background: var(--bg);
-    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .active-badge { color: var(--green); border-color: rgba(63,185,80,0.55); }
-  .switch-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-  @media (max-width: 780px) {
-    .switch-hero { grid-template-columns: 1fr; }
-    .provider-grid { grid-template-columns: 1fr; }
-  }
+  .prov:hover { border-color: var(--border-strong); background: var(--panel-2); }
+  .prov.active { border-color: var(--green-dot); box-shadow: 0 0 0 1px var(--green-dot), var(--shadow-sm); }
+  .prov-radio { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--border-strong); flex-shrink: 0; position: relative; transition: border-color 0.12s; }
+  .prov.active .prov-radio { border-color: var(--green-dot); }
+  .prov.active .prov-radio::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--green-dot); }
+  .prov-body { flex: 1; min-width: 0; }
+  .prov-name { font-size: 15px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+  .prov-name .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .prov-meta { font-size: 12px; color: var(--text-dim); margin-top: 2px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .prov-meta .url { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+  .prov-models { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
+  .prov-actions { display: flex; gap: 4px; flex-shrink: 0; }
+  .prov-actions .btn { opacity: 0.65; }
+  .prov:hover .prov-actions .btn { opacity: 1; }
 
-  /* Tabs */
-  .tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
-  .tab {
-    padding: 8px 16px; font-size: 13px; font-weight: 500; cursor: pointer;
-    color: var(--text-dim); border-bottom: 2px solid transparent;
-    transition: all 0.15s; background: none; border-top: none; border-left: none; border-right: none;
-    font-family: inherit;
+  .empty-add {
+    text-align: center; padding: 40px 24px; border: 1px dashed var(--border-strong); border-radius: var(--radius);
+    color: var(--text-dim); background: var(--panel-2);
   }
-  .tab:hover { color: var(--text); }
-  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .empty-add h3 { font-size: 15px; color: var(--text); margin-bottom: 6px; font-weight: 600; }
+  .empty-add p { font-size: 13px; margin-bottom: 16px; }
 
-  /* Command block */
-  .cmd-block {
-    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
-    padding: 12px 16px; font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
-    font-size: 12px; position: relative; margin: 8px 0;
-    word-break: break-all;
-  }
-  .cmd-block .copy-btn {
-    position: absolute; top: 8px; right: 8px;
-    background: var(--surface); border: 1px solid var(--border);
-    color: var(--text-dim); padding: 3px 8px; border-radius: 4px;
-    cursor: pointer; font-size: 11px;
-  }
-  .cmd-block .copy-btn:hover { color: var(--text); background: var(--border); }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-faint); padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  td.mono, th.mono { font-family: var(--mono); font-size: 12px; }
+  .cell-clip { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  /* Provider badges */
-  .provider-tag {
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600;
-    border: 1px solid;
-  }
-  .provider-deepseek { color: #58a6ff; border-color: #1a3a5a; background: #0d1f33; }
-  .provider-openai { color: #3fb950; border-color: #1a3a2a; background: #0d1f13; }
-  .provider-custom { color: #d29922; border-color: #4a350c; background: #211805; }
+  /* ── Model picker ── */
+  .picker-group-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: var(--text-dim); padding: 12px 4px 6px; text-transform: uppercase; letter-spacing: 0.4px; }
+  .picker-group-title .count { font-weight: 600; color: var(--text-faint); }
+  .mrow { display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: 8px; border: 1px solid transparent; cursor: pointer; }
+  .mrow:hover { background: var(--panel-2); }
+  .mrow.checked { background: var(--accent-soft); }
+  .mrow input { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
+  .mrow .mid { font-family: var(--mono); font-size: 12.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mrow .mowner { font-size: 11px; color: var(--text-faint); flex-shrink: 0; }
+  details.other-models { margin-top: 6px; }
+  details.other-models > summary { cursor: pointer; font-size: 12px; font-weight: 700; color: var(--text-dim); padding: 10px 4px; list-style: none; text-transform: uppercase; letter-spacing: 0.4px; }
+  details.other-models > summary::-webkit-details-marker { display: none; }
+  details.other-models > summary::before { content: "▸ "; }
+  details.other-models[open] > summary::before { content: "▾ "; }
 
-  /* Collapsible */
-  .collapsible-header {
-    cursor: pointer; display: flex; align-items: center; gap: 6px;
-    font-size: 13px; font-weight: 600; padding: 8px 0;
-  }
-  .collapsible-header .arrow { transition: transform 0.2s; font-size: 10px; }
-  .collapsible.open .collapsible-header .arrow { transform: rotate(90deg); }
-  .collapsible-body { display: none; }
-  .collapsible.open .collapsible-body { display: block; }
+  .log-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px,1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow-sm); }
+  .tile .n { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
+  .tile .l { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+  .tile.err .n { color: var(--red); }
+  .tile.ok .n { color: var(--green); }
+  .log-row td.st-success { color: var(--green); font-weight: 600; }
+  .log-row td.st-error { color: var(--red); font-weight: 600; }
+  .log-row.is-error { background: var(--red-soft); }
+  .errbox { background: var(--red-soft); border: 1px solid color-mix(in srgb, var(--red) 30%, transparent); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; color: var(--red); font-family: var(--mono); word-break: break-word; }
 
-  /* Setup steps */
-  .setup-steps { counter-reset: step; }
-  .setup-step {
-    display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid rgba(48,54,61,0.3);
-    counter-increment: step;
+  .cmd { background: var(--panel-3); border: 1px solid var(--border); border-radius: 8px; padding: 12px 42px 12px 14px; font-family: var(--mono); font-size: 12px; position: relative; word-break: break-all; white-space: pre-wrap; color: var(--text); }
+  .cmd .copy { position: absolute; top: 8px; right: 8px; }
+  .empty { text-align: center; color: var(--text-faint); padding: 30px 20px; font-size: 13px; }
+
+  .result-box { border-radius: 8px; padding: 12px 14px; font-size: 13px; margin-top: 12px; border: 1px solid var(--border); background: var(--panel-2); display: none; }
+  .result-box.show { display: block; }
+  .result-box.ok { border-color: transparent; background: var(--green-soft); }
+  .result-box.bad { border-color: transparent; background: var(--red-soft); }
+  .result-box .rtxt { font-family: var(--mono); font-size: 12px; margin-top: 6px; white-space: pre-wrap; word-break: break-word; color: var(--text-dim); }
+
+  /* ── Modal ── */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.32);
+    display: none; align-items: flex-start; justify-content: center; padding: 40px 16px; overflow-y: auto;
+    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
   }
-  .setup-step:last-child { border-bottom: none; }
-  .step-num {
-    width: 26px; height: 26px; border-radius: 50%; background: var(--accent);
-    color: #fff; display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 1px;
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow-lg);
+    width: 100%; max-width: 560px; animation: modalIn 0.18s ease; margin: auto;
   }
-  .step-content { flex: 1; }
-  .step-content h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
-  .step-content p { font-size: 12px; color: var(--text-dim); }
+  @keyframes modalIn { from { transform: translateY(12px) scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid var(--border); }
+  .modal-head h3 { font-size: 16px; font-weight: 650; }
+  .modal-body { padding: 20px; max-height: 66vh; overflow-y: auto; }
+  .modal-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 20px; border-top: 1px solid var(--border); }
+  .modal-close { border: none; background: none; font-size: 20px; color: var(--text-faint); cursor: pointer; line-height: 1; padding: 4px; }
+  .modal-close:hover { color: var(--text); }
+
+  .preset-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .preset-btn {
+    display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--border-strong); background: var(--panel-2); cursor: pointer; font-family: inherit; transition: all 0.12s;
+  }
+  .preset-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .preset-btn.sel { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent); }
+  .preset-btn .pt { font-size: 13px; font-weight: 600; color: var(--text); }
+  .preset-btn .ps { font-size: 11px; color: var(--text-dim); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .modal-picker { max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; padding: 4px; margin-top: 6px; }
+
+  .toasts { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+  .toast { padding: 11px 16px; border-radius: 10px; font-size: 13px; font-weight: 500; box-shadow: var(--shadow); background: var(--panel); border: 1px solid var(--border); color: var(--text); max-width: 360px; display: flex; align-items: center; gap: 9px; animation: slideUp 0.22s ease; }
+  .toast .ic { width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #fff; }
+  .toast.success .ic { background: var(--green-dot); }
+  .toast.error .ic { background: var(--red-dot); }
+  .toast.info .ic { background: var(--accent); }
+  @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  .mobile-nav { display: none; }
+  @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } .grid-fields { grid-template-columns: 1fr; } }
+  @media (max-width: 760px) {
+    .app { flex-direction: column; }
+    .sidebar { display: none; }
+    .mobile-nav { display: flex; gap: 4px; overflow-x: auto; padding: 8px 12px; background: var(--panel-2); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 25; -webkit-overflow-scrolling: touch; }
+    .mobile-nav .nav-item { width: auto; white-space: nowrap; flex-shrink: 0; padding: 7px 12px; }
+    .mobile-nav .nav-item .badge { display: none; }
+    .statusbar { top: 47px; padding: 10px 14px; }
+    .view { padding: 16px 14px; }
+    .stat .v { max-width: 130px; }
+    .preset-grid { grid-template-columns: 1fr; }
+    .prov-actions { flex-direction: column; }
+    .now-actions { width: 100%; }
+    .update-banner { width: calc(100% - 28px); margin-top: 12px; }
+  }
 </style>
 </head>
 <body>
-<div class="toast-container" id="toastContainer"></div>
+<div class="toasts" id="toasts"></div>
 
-<div class="container">
-  <!-- Header -->
-  <div class="header">
-    <div class="header-icon">🧪</div>
-    <div class="header-info">
-      <h1>Claude Science API Bridge</h1>
-      <div class="subtitle">使用 DeepSeek / OpenAI / Custom API 驱动 Claude Science</div>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">CS</div>
+      <div class="brand-text"><h1>API Bridge</h1><span>Claude Science 控制台</span></div>
     </div>
-    <div class="status-badge status-running" id="statusBadge">
-      <span class="status-dot"></span>
-      <span id="statusText">运行中</span>
+    <nav id="navDesktop"></nav>
+    <div class="sidebar-foot">本地代理 · 安全模式<br>不修改系统网络 / DNS / 证书</div>
+  </aside>
+
+  <div class="main">
+    <div class="mobile-nav" id="navMobile"></div>
+
+    <div class="statusbar">
+      <div class="stat"><span class="dot" id="sbDot"></span><span class="k">代理</span><span class="v" id="sbProxy">检测中…</span></div>
+      <div class="stat mono"><span class="k">Base URL</span><span class="v" id="sbBase">–</span></div>
+      <div class="stat"><span class="k">Provider</span><span class="v" id="sbProvider">–</span></div>
+      <div class="stat"><span class="k">菜单模型</span><span class="v" id="sbMenu">–</span></div>
+      <div class="stat"><span class="k">版本</span><span class="v" id="sbVersion">–</span></div>
+      <div class="stat"><span class="dot" id="sbReqDot"></span><span class="k">最近请求</span><span class="v" id="sbReq">–</span></div>
+      <div class="spacer"></div>
+      <button class="btn sm ghost" onclick="refreshAll()" title="刷新">↻</button>
     </div>
+
+    <div class="update-banner" id="updateBanner">
+      <div>
+        <strong id="updateBannerTitle">发现新版本</strong>
+        <div class="msg" id="updateBannerMsg">可更新到最新版。</div>
+      </div>
+      <div class="actions">
+        <button class="btn primary sm" onclick="installUpdateNow()" id="bannerInstallUpdateBtn">一键更新</button>
+        <button class="btn sm" onclick="openLatestRelease()">发布说明</button>
+        <button class="btn sm" onclick="copyUpdateCommand()">复制更新命令</button>
+        <button class="btn sm ghost" onclick="dismissUpdateBanner()">稍后</button>
+      </div>
+    </div>
+
+    <!-- ══ Providers (home) ══ -->
+    <section class="view active" id="view-providers">
+      <div class="view-head">
+        <div>
+          <h2>Providers</h2>
+          <p>点任意 Provider 即可一键切换——Base URL、API Key、模型映射会一起生效。</p>
+        </div>
+        <button class="btn primary" onclick="openProviderModal('add')">＋ 添加 Provider</button>
+      </div>
+
+      <!-- current provider banner -->
+      <div class="now-bar">
+        <div class="now-main">
+          <div class="now-glyph" id="nowGlyph">–</div>
+          <div class="now-info">
+            <div class="lab">使用中</div>
+            <div class="name" id="nowName">–</div>
+            <div class="sub" id="nowSub">–</div>
+          </div>
+        </div>
+        <div class="now-actions">
+          <button class="btn primary" onclick="runTest()" id="testBtn">▶ 一键测试</button>
+          <button class="btn" onclick="openClaudeScience()">↗ 打开 Claude Science</button>
+          <button class="btn" onclick="patchMenu()">◫ 补丁菜单</button>
+        </div>
+      </div>
+      <div class="result-box" id="testResult" style="margin-top:-8px;margin-bottom:20px">
+        <strong id="testResultTitle"></strong><div class="rtxt" id="testResultText"></div>
+      </div>
+
+      <div class="toolbar">
+        <div class="search"><input type="text" id="providerSearch" placeholder="搜索 Provider" oninput="renderProviderList()"></div>
+      </div>
+      <div id="providerListWrap"></div>
+    </section>
+
+    <!-- ══ Models ══ -->
+    <section class="view" id="view-models">
+      <div class="view-head">
+        <div>
+          <h2>模型菜单</h2>
+          <p>调整当前 Provider 在 Claude Science 里显示的模型。API Key 由服务端读取，不会暴露到前端。</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head no-border"><div class="panel-title"><span class="ico">↓</span> 从当前 Provider 拉取模型</div></div>
+        <div class="panel-body" style="padding-top:4px">
+          <div class="grid-fields">
+            <div class="field">
+              <label>从哪个后端拉取</label>
+              <select id="modelFetchProvider">
+                <option value="custom">Custom</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="openai">OpenAI</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Models URL 覆写（可选）</label>
+              <input type="text" id="modelsUrlOverride" placeholder="留空自动尝试 /v1/models、/models …">
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn primary" onclick="fetchModelsForCurrent()" id="fetchBtn">↓ 获取模型列表</button>
+            <span class="hint" id="modelFetchHint" style="align-self:center;color:var(--text-faint);font-size:12px"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="modelPickerPanel" style="display:none">
+        <div class="panel-head"><div class="panel-title"><span class="ico">☑</span> 选择模型</div><span class="panel-sub" id="pickerSummary"></span></div>
+        <div class="panel-body">
+          <div id="modelPicker"></div>
+          <div class="section-divider" style="margin:14px 0"></div>
+          <div class="field" style="margin-bottom:14px">
+            <label>映射预览（勾选的模型将占用这些 Claude Science 槽位）</label>
+            <div class="table-wrap"><table><thead><tr><th class="mono">Claude-facing ID</th><th>显示名</th><th class="mono">真实后端模型</th></tr></thead><tbody id="mapPreviewBody"></tbody></table></div>
+          </div>
+          <div class="btn-row">
+            <button class="btn primary" onclick="applyFetchedModels(false)">✓ 应用到菜单</button>
+            <button class="btn primary" onclick="applyFetchedModels(true)">✓ 应用并补丁菜单</button>
+          </div>
+          <div class="hint" style="margin-top:10px;color:var(--text-faint);font-size:12px">应用后 <code>/v1/models</code> 立即生效；如需 Claude Science 模型菜单同步，请「补丁菜单」并重启 Claude Science。</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title"><span class="ico">⇄</span> 当前映射</div><span class="panel-sub">Claude Science 显示名 → 真实后端模型</span></div>
+        <div class="panel-body tight"><div class="table-wrap"><table>
+          <thead><tr><th>显示名</th><th class="mono">Claude-facing ID</th><th class="mono">真实后端模型</th></tr></thead>
+          <tbody id="curMapBody"></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ Advanced (settings + routing) ══ -->
+    <section class="view" id="view-advanced">
+      <div class="view-head"><div><h2>高级设置</h2><p>全局策略、本地鉴权、部署，以及路由规则与原始配置。普通用户通常无需改动。</p></div></div>
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title"><span class="ico">▦</span> 请求策略</div></div>
+        <div class="panel-body">
+          <div class="grid-fields">
+            <div class="field"><label>图片输入策略</label>
+              <select id="inlineImagePolicy">
+                <option value="auto">auto — DeepSeek 省略图片，视觉后端保留</option>
+                <option value="preserve">preserve — 始终发送图片</option>
+                <option value="omit">omit — 始终省略图片</option>
+                <option value="omit_inline">omit_inline — 仅省略内联 base64 图片</option>
+              </select></div>
+            <div class="field"><label>reasoning_content 显示策略</label>
+              <select id="reasoningPolicy">
+                <option value="never">never — 不显示 reasoning_content</option>
+                <option value="fallback">fallback — content 为空时显示</option>
+                <option value="always">always — 优先显示</option>
+              </select></div>
+          </div>
+          <button class="btn primary sm" onclick="saveStrategy()">保存策略</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title"><span class="ico">⚿</span> 本地 Path-Secret</div><span class="panel-sub">限制本机其它进程调用你的第三方 Key</span></div>
+        <div class="panel-body">
+          <div class="grid-fields">
+            <div class="field"><label>鉴权模式</label>
+              <select id="proxyAuthMode">
+                <option value="optional">optional — 兼容裸路径与 secret 路径</option>
+                <option value="required">required — 仅 secret 路径可访问推理接口</option>
+              </select></div>
+            <div class="field"><label>Path-Secret</label>
+              <div class="input-inline"><input type="password" id="proxyAuthToken" placeholder="留空关闭" autocomplete="off"><button class="btn sm" onclick="toggleVisibility('proxyAuthToken')">👁</button></div></div>
+          </div>
+          <button class="btn primary sm" onclick="savePathSecret()">保存鉴权</button>
+          <div class="hint" style="margin-top:8px;color:var(--text-faint);font-size:12px">required 模式下启动脚本会把 secret 拼进 <code>ANTHROPIC_BASE_URL</code>；未同步会导致 403。</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title"><span class="ico">◫</span> 部署与 Daemon</div></div>
+        <div class="panel-body">
+          <div class="btn-row" style="margin-bottom:14px">
+            <button class="btn" onclick="patchMenu()">◫ 补丁模型菜单</button>
+            <button class="btn" onclick="setGlobalEnv()">⚙ 设置全局 ANTHROPIC_BASE_URL</button>
+            <button class="btn" onclick="installService()">↻ 安装 LaunchAgent</button>
+            <button class="btn" onclick="refreshToken()">⟳ 刷新 OAuth Token</button>
+          </div>
+          <div class="field"><label>手动启动命令</label>
+            <div class="cmd" id="startCmd"><button class="btn sm copy" onclick="copyStartCmd()">复制</button><span id="startCmdText">export ANTHROPIC_BASE_URL="http://127.0.0.1:9876"
+open -a "Claude Science"</span></div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title"><span class="ico">↑</span> 版本与更新</div><span class="panel-sub" id="updatePanelSub">检查 GitHub Release</span></div>
+        <div class="panel-body">
+          <div class="grid-fields">
+            <div class="field"><label>当前版本</label><input type="text" id="currentVersion" readonly value="–"></div>
+            <div class="field"><label>GitHub 最新版</label><input type="text" id="latestVersion" readonly value="–"></div>
+          </div>
+          <div class="result-box show" id="updateResult" style="display:block;margin:0 0 12px"></div>
+          <div class="result-box" id="updateInstallResult" style="display:none;margin:0 0 12px"></div>
+          <div class="btn-row">
+            <button class="btn primary sm" onclick="checkUpdatesNow()" id="checkUpdateBtn">检查更新</button>
+            <button class="btn primary sm" onclick="installUpdateNow()" id="installUpdateBtn">一键更新</button>
+            <button class="btn sm" onclick="openLatestRelease()">打开发布说明</button>
+            <button class="btn sm" onclick="copyUpdateCommand()">复制更新命令</button>
+          </div>
+          <div class="hint" style="margin-top:10px;color:var(--text-faint);font-size:12px">一键更新会下载 GitHub Latest Release 的 DMG 并安装到 <code>~/Applications</code>。安装完成后 App 会重新打开，并把新版代理同步到本地目录。</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title"><span class="ico">⇄</span> 路由规则</div></div>
+        <div class="panel-body">
+          <div class="grid-fields">
+            <div class="field"><label>默认后端</label>
+              <select id="defaultBackend"><option value="deepseek">DeepSeek</option><option value="openai">OpenAI / ChatGPT</option><option value="custom">Custom</option></select></div>
+            <div class="field"><label>强制模型名（留空透传）</label><input type="text" id="forceModel" placeholder="例如 deepseek-chat"></div>
+            <div class="field"><label>模型列表模式</label>
+              <select id="modelListMode"><option value="aliases">aliases — 仅第三方别名</option><option value="aliases_first">aliases_first — 别名优先，保留兼容</option><option value="builtin">builtin — 内置兼容列表</option></select></div>
+            <div class="field"><label>菜单策略</label>
+              <select id="modelMenuStrategy"><option value="claude_compatible">claude_compatible — Claude 认可槽位</option><option value="real_ids">real_ids — 直接暴露真实 ID</option><option value="custom_ids">custom_ids — byok-model-*</option></select></div>
+          </div>
+          <div class="field"><label>第三方模型别名（JSON）</label>
+            <textarea id="modelAliases" rows="6" spellcheck="false" placeholder='[{"id":"claude-opus-4-8","display_name":"Kimi K2.6 Pro++","backend":"custom","model":"Pro/moonshotai/Kimi-K2.6"}]'></textarea></div>
+          <div class="grid-fields">
+            <div class="field"><label>模型 max_tokens 上限（JSON）</label><textarea id="modelTokenCaps" rows="3" spellcheck="false" placeholder='{"Pro/moonshotai/Kimi-K2.6":8192}'></textarea></div>
+            <div class="field"><label>默认 max_tokens 上限（0 关闭）</label><input type="number" id="defaultMaxTokensCap" min="0" step="1" value="0"></div>
+          </div>
+          <button class="btn primary sm" onclick="saveRouting()">保存路由规则</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title"><span class="ico">{}</span> 原始配置</div><button class="btn sm ghost" onclick="copyRawConfig()">复制</button></div>
+        <div class="panel-body tight"><div class="cmd" id="rawConfig" style="max-height:340px;overflow:auto">加载中…</div></div>
+      </div>
+    </section>
+
+    <!-- ══ Logs ══ -->
+    <section class="view" id="view-logs">
+      <div class="view-head"><div><h2>诊断日志</h2><p>最近的推理请求、后端、模型和成功/失败状态。</p></div></div>
+      <div class="log-tiles">
+        <div class="tile"><div class="n" id="logTotal">0</div><div class="l">最近请求</div></div>
+        <div class="tile ok"><div class="n" id="logOk">0</div><div class="l">成功</div></div>
+        <div class="tile err"><div class="n" id="logErr">0</div><div class="l">失败</div></div>
+      </div>
+      <div class="panel" id="lastErrPanel" style="display:none">
+        <div class="panel-head"><div class="panel-title"><span class="ico" style="color:var(--red)">⚠</span> 最近错误</div></div>
+        <div class="panel-body"><div class="errbox" id="lastErrText"></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title"><span class="ico">≣</span> 请求记录</div>
+          <div class="btn-row"><button class="btn sm" onclick="loadLogs()">↻ 刷新</button><button class="btn sm danger" onclick="clearLogs()">清空</button></div></div>
+        <div class="panel-body tight"><div class="table-wrap"><table>
+          <thead><tr><th>时间</th><th>后端</th><th class="mono">模型</th><th>流式</th><th>状态</th></tr></thead>
+          <tbody id="logBody"><tr><td colspan="5" class="empty">暂无请求记录</td></tr></tbody></table></div></div>
+      </div>
+    </section>
   </div>
+</div>
 
-  <!-- Tabs -->
-  <div class="tabs">
-    <button class="tab active" data-tab="providers">🔀 切换中心</button>
-    <button class="tab" data-tab="routing">🔀 路由规则</button>
-    <button class="tab" data-tab="setup">⚡ 一键部署</button>
-    <button class="tab" data-tab="logs">📋 请求日志</button>
-  </div>
-
-  <!-- Tab: API 配置 -->
-  <div class="tab-content active" id="tab-providers">
-    <div class="switch-hero">
-      <div class="switch-panel">
-        <div class="card-header" style="margin-bottom:0">
-          <div>
-            <div class="card-title"><span class="icon">🔀</span> Provider Switch</div>
-            <div class="subtitle" style="margin-top:3px">Claude Science → Local Bridge → Third-party API</div>
-          </div>
-          <div class="mode-seg">
-            <button class="seg-btn active">第三方 API</button>
-            <button class="seg-btn">官方直连</button>
-          </div>
-        </div>
-        <div class="switch-kv">
-          <div class="kv-item">
-            <div class="kv-label">当前后端</div>
-            <div class="kv-value" id="switchCurrentBackend">-</div>
-          </div>
-          <div class="kv-item">
-            <div class="kv-label">当前模型</div>
-            <div class="kv-value" id="switchCurrentModel">-</div>
-          </div>
-          <div class="kv-item">
-            <div class="kv-label">上游协议</div>
-            <div class="kv-value" id="switchCurrentMode">-</div>
-          </div>
-          <div class="kv-item">
-            <div class="kv-label">菜单策略</div>
-            <div class="kv-value" id="switchMenuStrategy">-</div>
-          </div>
-        </div>
-        <div class="model-chips" id="switchModelChips"></div>
+<!-- ══ Add / Edit Provider modal ══ -->
+<div class="modal-overlay" id="provModal" onclick="if(event.target===this)closeProviderModal()">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modalTitle">添加 Provider</h3>
+      <button class="modal-close" onclick="closeProviderModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="field" id="presetField">
+        <label>从预设模板开始（可选）</label>
+        <div class="preset-grid" id="presetGrid"></div>
       </div>
-
-      <div class="switch-panel">
-        <div class="card-title" style="margin-bottom:12px"><span class="icon">⚙</span> 快速动作</div>
-        <div class="btn-group">
-          <button class="btn btn-primary btn-sm" onclick="fetchModelsForCurrent()">📥 拉取当前模型</button>
-          <button class="btn btn-outline btn-sm" onclick="patchCurrentModelMenu()">🧩 补丁菜单</button>
-          <button class="btn btn-outline btn-sm" onclick="saveCurrentProfile()">💾 保存当前</button>
+      <div class="section-divider" style="margin:16px 0"></div>
+      <div class="field"><label>名称</label><input type="text" id="mName" placeholder="例如 我的 Kimi"></div>
+      <div class="grid-fields">
+        <div class="field"><label>后端类型</label>
+          <select id="mBackend"><option value="custom">Custom（OpenAI 兼容）</option><option value="deepseek">DeepSeek</option><option value="openai">OpenAI</option></select></div>
+        <div class="field"><label>上游协议</label>
+          <select id="mMode"><option value="openai">OpenAI 兼容翻译</option><option value="anthropic">Anthropic 原生透传</option></select></div>
+      </div>
+      <div class="field"><label>Base URL</label><input type="text" id="mBase" placeholder="https://api.siliconflow.cn"></div>
+      <div class="field"><label>API Key</label>
+        <div class="input-inline"><input type="password" id="mKey" placeholder="sk-..." autocomplete="off"><button class="btn sm" onclick="toggleVisibility('mKey')">👁</button></div>
+        <div class="hint" id="mKeyHint">Key 仅保存在本地 config.json，不会提交到 Git，也不会显示回前端。</div>
+      </div>
+      <div class="field"><label>图片输入</label>
+        <select id="mImage">
+          <option value="preserve">保留图片 — 视觉优先（Kimi K2.6 / Qwen3-VL / GPT-4o）</option>
+          <option value="auto">自动 — DeepSeek 忽略，其它保留</option>
+          <option value="omit">忽略图片 — 仅纯文本模型</option>
+          <option value="omit_inline">仅忽略内联 base64 图片</option>
+        </select>
+        <div class="hint">默认保留图片；Kimi K2.6、Qwen3-VL、GPT-4o 等视觉模型会直接收到图片。只有确认上游是纯文本模型时再改为忽略。</div>
+      </div>
+      <div class="field">
+        <label>模型（映射到 Claude Science 的 Opus / Sonnet 槽位）</label>
+        <div class="btn-row" style="margin-bottom:8px">
+          <button class="btn sm" onclick="modalFetchModels()" id="mFetchBtn">↓ 拉取模型列表</button>
+          <span class="hint" id="mFetchHint" style="align-self:center;color:var(--text-faint)"></span>
         </div>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:12px" id="switchHint"></div>
+        <div class="modal-picker" id="mPicker"><div class="empty">选择预设会自动带入推荐模型；或填好 Key 后点「拉取模型列表」。</div></div>
       </div>
     </div>
-
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title"><span class="icon">🗂</span> Providers</div>
-        <div class="btn-group">
-          <button class="btn btn-outline btn-sm" onclick="saveCurrentProfile()">保存当前</button>
-        </div>
-      </div>
-      <div class="provider-toolbar">
-        <input type="text" id="providerSearch" placeholder="搜索 provider、base_url 或模型" oninput="renderProviderCards()">
-        <select id="providerPreset" style="max-width:240px"></select>
-        <button class="btn btn-outline btn-sm" onclick="applyProviderPreset()">套用预设</button>
-      </div>
-      <select id="providerProfile" style="display:none"></select>
-      <div class="provider-grid" id="providerCards"></div>
-    </div>
-
-    <!-- DeepSeek -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">
-          <span class="provider-tag provider-deepseek">DeepSeek</span> DeepSeek API
-        </div>
-        <span style="font-size:11px;color:var(--text-dim)" id="deepseekStatus"></span>
-      </div>
-      <div class="form-group">
-        <label>API Key</label>
-        <div class="input-row">
-          <input type="password" id="deepseekKey" placeholder="sk-..." autocomplete="off">
-          <button class="btn btn-outline btn-sm" onclick="toggleVisibility('deepseekKey')">👁</button>
-        </div>
-      </div>
-      <div class="form-group">
-        <label>API Base URL</label>
-        <input type="text" id="deepseekBase" value="https://api.deepseek.com" placeholder="https://api.deepseek.com">
-      </div>
-      <div class="form-group">
-        <label>上游协议</label>
-        <select id="deepseekMode">
-          <option value="openai">OpenAI-compatible</option>
-          <option value="anthropic">Anthropic native</option>
-        </select>
-      </div>
-      <div class="btn-group">
-        <button class="btn btn-outline btn-sm" onclick="testBackend('deepseek')">🔍 测试连接</button>
-        <button class="btn btn-primary btn-sm" onclick="saveProvider('deepseek')">💾 保存</button>
-      </div>
-    </div>
-
-    <!-- OpenAI -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">
-          <span class="provider-tag provider-openai">OpenAI</span> OpenAI / ChatGPT API
-        </div>
-        <span style="font-size:11px;color:var(--text-dim)" id="openaiStatus"></span>
-      </div>
-      <div class="form-group">
-        <label>API Key</label>
-        <div class="input-row">
-          <input type="password" id="openaiKey" placeholder="sk-..." autocomplete="off">
-          <button class="btn btn-outline btn-sm" onclick="toggleVisibility('openaiKey')">👁</button>
-        </div>
-      </div>
-      <div class="form-group">
-        <label>API Base URL</label>
-        <input type="text" id="openaiBase" value="https://api.openai.com" placeholder="https://api.openai.com">
-      </div>
-      <div class="form-group">
-        <label>上游协议</label>
-        <select id="openaiMode">
-          <option value="openai">OpenAI-compatible</option>
-          <option value="anthropic">Anthropic native</option>
-        </select>
-      </div>
-      <div class="btn-group">
-        <button class="btn btn-outline btn-sm" onclick="testBackend('openai')">🔍 测试连接</button>
-        <button class="btn btn-primary btn-sm" onclick="saveProvider('openai')">💾 保存</button>
-      </div>
-    </div>
-
-    <!-- Custom -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">
-          <span class="provider-tag provider-custom">Custom</span> OpenAI-compatible API
-        </div>
-        <span style="font-size:11px;color:var(--text-dim)" id="customStatus"></span>
-      </div>
-      <div class="form-group">
-        <label>API Key</label>
-        <div class="input-row">
-          <input type="password" id="customKey" placeholder="sk-..." autocomplete="off">
-          <button class="btn btn-outline btn-sm" onclick="toggleVisibility('customKey')">👁</button>
-        </div>
-      </div>
-      <div class="form-group">
-        <label>API Base URL</label>
-        <input type="text" id="customBase" placeholder="https://provider.example.com 或 https://provider.example.com/v1">
-      </div>
-      <div class="form-group">
-        <label>上游协议</label>
-        <select id="customMode">
-          <option value="openai">OpenAI-compatible</option>
-          <option value="anthropic">Anthropic native</option>
-        </select>
-      </div>
-      <div class="btn-group">
-        <button class="btn btn-outline btn-sm" onclick="testBackend('custom')">🔍 测试连接</button>
-        <button class="btn btn-primary btn-sm" onclick="saveProvider('custom')">💾 保存</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Tab: 路由规则 -->
-  <div class="tab-content" id="tab-routing" style="display:none">
-    <div class="card">
-      <div class="card-title" style="margin-bottom:14px"><span class="icon">🔀</span> 模型路由配置</div>
-      <div class="form-group">
-        <label>默认后端</label>
-        <select id="defaultBackend">
-          <option value="deepseek">DeepSeek</option>
-          <option value="openai">OpenAI / ChatGPT</option>
-          <option value="custom">Custom OpenAI-compatible</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>强制模型名（覆盖所有请求，留空则透传）</label>
-        <input type="text" id="forceModel" placeholder="例如: deepseek-chat 或 gpt-4o">
-      </div>
-      <div class="form-group">
-        <label>Claude Science 模型列表模式</label>
-        <select id="modelListMode">
-          <option value="aliases">aliases：只显示第三方模型别名</option>
-          <option value="aliases_first">aliases_first：第三方模型优先，保留兼容模型</option>
-          <option value="builtin">builtin：使用内置兼容模型列表</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Claude Science 菜单策略</label>
-        <select id="modelMenuStrategy">
-          <option value="claude_compatible">claude_compatible：使用 Claude 认可槽位显示第三方模型名</option>
-          <option value="real_ids">real_ids：直接暴露第三方真实模型 ID（可能进入 More models 或被隐藏）</option>
-          <option value="custom_ids">custom_ids：使用 byok-model-* 固定别名</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>第三方模型别名（JSON）</label>
-        <textarea id="modelAliases" rows="7" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:8px;font-family:monospace"
-          placeholder='[{"id":"claude-opus-4-8","display_name":"Kimi K2.6 Pro++","backend":"custom","model":"Pro/moonshotai/Kimi-K2.6"}]'></textarea>
-      </div>
-      <div class="form-group">
-        <label>模型 max_tokens 上限（JSON，留空不夹取）</label>
-        <textarea id="modelTokenCaps" rows="4" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:8px;font-family:monospace"
-          placeholder='{"Pro/moonshotai/Kimi-K2.6":8192}'></textarea>
-      </div>
-      <div class="form-group">
-        <label>默认 max_tokens 上限（0 表示不启用）</label>
-        <input type="number" id="defaultMaxTokensCap" min="0" step="1" value="0">
-      </div>
-      <div class="form-group">
-        <label>本地 path-secret 模式</label>
-        <select id="proxyAuthMode">
-          <option value="optional">optional：兼容裸路径和 secret 路径</option>
-          <option value="required">required：只有 secret 路径可访问推理接口</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>本地 path-secret</label>
-        <input type="password" id="proxyAuthToken" placeholder="留空关闭；required 时脚本会拼进 ANTHROPIC_BASE_URL" autocomplete="off">
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title" style="margin-bottom:14px"><span class="icon">📥</span> 一键获取模型列表</div>
-      <div class="form-group">
-        <label>从哪个 Provider 拉取</label>
-        <select id="modelFetchProvider">
-          <option value="custom">Custom</option>
-          <option value="deepseek">DeepSeek</option>
-          <option value="openai">OpenAI</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Models URL 覆写（可选）</label>
-        <input type="text" id="modelsUrlOverride" placeholder="留空则自动尝试 /v1/models、/models、兼容子路径">
-      </div>
-      <div class="btn-group" style="margin-bottom:12px">
-        <button class="btn btn-outline btn-sm" onclick="fetchModels()">📥 获取模型列表</button>
-        <button class="btn btn-primary btn-sm" onclick="applyFetchedModels(false)">✅ 应用到菜单</button>
-        <button class="btn btn-primary btn-sm" onclick="applyFetchedModels(true)">🚀 应用并补丁菜单</button>
-        <button class="btn btn-outline btn-sm" onclick="saveFetchedProfile()">💾 保存为配置档</button>
-      </div>
-      <div class="model-list" id="fetchedModelList">
-        <div class="log-empty">还没有拉取模型列表</div>
-      </div>
-      <div style="font-size:11px;color:var(--text-dim);margin-top:8px" id="modelFetchHint"></div>
-    </div>
-
-    <div class="card">
-      <div class="card-title" style="margin-bottom:14px"><span class="icon">🗺</span> 模型名映射</div>
-      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">
-        Claude Science 中选的模型 → 实际调用的后端模型
-      </p>
-      <div class="form-group">
-        <label>DeepSeek 映射（JSON）</label>
-        <textarea id="deepseekModelMap" rows="3" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:8px;font-family:monospace"
-          placeholder='{"claude-sonnet-4-5":"deepseek-chat"}'></textarea>
-      </div>
-      <div class="form-group">
-        <label>OpenAI 映射（JSON）</label>
-        <textarea id="openaiModelMap" rows="3" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:8px;font-family:monospace"
-          placeholder='{"claude-sonnet-4-5":"gpt-4o"}'></textarea>
-      </div>
-      <div class="form-group">
-        <label>Custom 映射（JSON）</label>
-        <textarea id="customModelMap" rows="3" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:8px;font-family:monospace"
-          placeholder='{"claude-sonnet-4-5":"your-model"}'></textarea>
-      </div>
-      <div class="form-group">
-        <label>DeepSeek 模型匹配正则</label>
-        <input type="text" id="deepseekPattern" value="deepseek|deep-seek">
-      </div>
-      <div class="form-group">
-        <label>OpenAI 模型匹配正则</label>
-        <input type="text" id="openaiPattern" value="^(gpt-|o1|o3|o4|chatgpt)">
-      </div>
-      <div class="form-group">
-        <label>Custom 模型匹配正则</label>
-        <input type="text" id="customPattern" placeholder="例如: ^(kimi|qwen|glm|yi-)">
-      </div>
-      <div class="form-group">
-        <label>reasoning_content 显示策略</label>
-        <select id="reasoningPolicy">
-          <option value="never">never：不显示 reasoning_content</option>
-          <option value="fallback">fallback：content 为空时显示 reasoning_content</option>
-          <option value="always">always：有 reasoning_content 时优先显示</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>图片输入策略</label>
-        <select id="inlineImagePolicy">
-          <option value="auto">auto：DeepSeek 省略图片，视觉后端保留图片</option>
-          <option value="preserve">preserve：始终向后端发送图片</option>
-          <option value="omit">omit：始终省略图片</option>
-          <option value="omit_inline">omit_inline：只省略 base64 内联图片</option>
-        </select>
-      </div>
-      <button class="btn btn-primary btn-sm" onclick="saveRouting()">💾 保存路由配置</button>
-    </div>
-  </div>
-
-  <!-- Tab: 一键部署 -->
-  <div class="tab-content" id="tab-setup" style="display:none">
-    <div class="card">
-      <div class="card-title" style="margin-bottom:16px"><span class="icon">⚡</span> macOS 一键部署</div>
-      <div class="setup-steps">
-        <div class="setup-step">
-          <div class="step-num">1</div>
-          <div class="step-content">
-            <h4>设置 API Key</h4>
-            <p>在「API 配置」标签页填入 DeepSeek 或 OpenAI 的 API Key</p>
-          </div>
-        </div>
-        <div class="setup-step">
-          <div class="step-num">2</div>
-          <div class="step-content">
-            <h4>设置全局环境变量</h4>
-            <p>让 Claude Science 从 Dock/Spotlight 启动时也能读取 ANTHROPIC_BASE_URL</p>
-            <button class="btn btn-outline btn-sm" onclick="setGlobalEnv()" style="margin-top:8px">
-              🔧 设置 ANTHROPIC_BASE_URL
-            </button>
-          </div>
-        </div>
-        <div class="setup-step">
-          <div class="step-num">3</div>
-          <div class="step-content">
-            <h4>安装后台服务</h4>
-            <p>将 proxy 安装为 launchd 服务，开机自启，无需手动启动</p>
-            <button class="btn btn-outline btn-sm" onclick="installService()" style="margin-top:8px">
-              ⚙ 安装 LaunchAgent
-            </button>
-          </div>
-        </div>
-        <div class="setup-step">
-          <div class="step-num">4</div>
-          <div class="step-content">
-            <h4>刷新 OAuth Token</h4>
-            <p>重新生成假 OAuth token（更换账号或 token 过期后需要）</p>
-            <button class="btn btn-outline btn-sm" onclick="refreshToken()" style="margin-top:8px">
-              🔄 刷新 Token
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title" style="margin-bottom:12px"><span class="icon">📋</span> 手动启动</div>
-      <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px">
-        复制以下命令在终端执行，即可使用 Claude Science：
-      </p>
-      <div class="cmd-block">
-        <button class="copy-btn" onclick="copyCmd('shell')">📋 复制</button>
-        <div id="shellCmd">export ANTHROPIC_BASE_URL="http://127.0.0.1:9876"<br>open -a "Claude Science"</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Tab: 请求日志 -->
-  <div class="tab-content" id="tab-logs" style="display:none">
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title"><span class="icon">📋</span> 最近请求</div>
-        <div class="btn-group">
-          <button class="btn btn-outline btn-sm" onclick="loadLogs()">🔄 刷新</button>
-          <button class="btn btn-outline btn-sm" onclick="clearLogs()">🗑 清空</button>
-        </div>
-      </div>
-      <div class="log-list" id="logList">
-        <div class="log-empty">暂无请求记录</div>
-      </div>
+    <div class="modal-foot">
+      <button class="btn danger" id="mDeleteBtn" style="display:none" onclick="deleteFromModal()">删除</button>
+      <div class="spacer" style="flex:1"></div>
+      <button class="btn" onclick="closeProviderModal()">取消</button>
+      <button class="btn" onclick="saveProviderModal(false)">保存</button>
+      <button class="btn primary" onclick="saveProviderModal(true)">保存并切换</button>
     </div>
   </div>
 </div>
 
 <script>
-// ── Tab switching ──
-function switchTab(target) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === target));
-  document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
-  const el = document.getElementById('tab-' + target);
-  if (el) el.style.display = 'block';
-  if (target === 'logs') loadLogs();
-}
+// ════════════════════════ State ════════════════════════
+const NAV = [
+  { id: 'providers', label: 'Providers', ico: '⇄' },
+  { id: 'models', label: '模型菜单', ico: '↓' },
+  { id: 'advanced', label: '高级设置', ico: '⚙' },
+  { id: 'logs', label: '诊断日志', ico: '≣' },
+];
+const SLOT_IDS = ['claude-opus-4-8', 'claude-sonnet-5', 'claude-sonnet-4-6'];
+const SLOT_NAMES = ['Opus 槽位', 'Sonnet 槽位', 'Sonnet 备用'];
+let currentConfig = {};
+let healthInfo = {};
+let providerPresets = {};
+let providerProfiles = [];   // all (builtin + custom) from /api/provider-profiles
+let activeProfileId = '';
+let fetchedModels = [];
+let logsCache = [];
+let updateInfo = {};
+let updateInstallState = {};
+let updateInstallTimer = null;
+let lastInstallStatus = '';
+// modal state
+let modal = { mode: 'add', profileId: '', models: [], selected: new Set(), maskedKey: '', preset: '' };
 
-document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => switchTab(tab.dataset.tab));
-});
-
-// ── Toast ──
-function toast(msg, type='info') {
-  const container = document.getElementById('toastContainer');
-  const el = document.createElement('div');
-  el.className = `toast toast-${type}`;
-  el.textContent = msg;
-  container.appendChild(el);
-  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; }, 2500);
-  setTimeout(() => el.remove(), 3000);
-}
-
-// ── API helpers ──
-async function api(path, opts={}) {
-  const res = await fetch(path, { headers: {'Content-Type':'application/json'}, ...opts });
+// ════════════════════════ Helpers ════════════════════════
+function $(id) { return document.getElementById(id); }
+function escapeHtml(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function jsArg(v) { return JSON.stringify(String(v == null ? '' : v)).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'\\u003c').replace(/>/g,'\\u003e'); }
+async function api(path, opts = {}) {
+  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
   const text = await res.text();
   if (!text.trim()) return { ok: res.ok, status: res.status };
-  try {
-    return JSON.parse(text);
-  } catch(e) {
-    return { ok: false, status: res.status, error: text.slice(0, 500) || e.message };
-  }
+  try { return JSON.parse(text); } catch (e) { return { ok: false, status: res.status, error: text.slice(0, 500) || e.message }; }
+}
+function toast(msg, type = 'info') {
+  const icons = { success: '✓', error: '✕', info: 'i' };
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span class="ic">${icons[type] || 'i'}</span><span>${escapeHtml(msg)}</span>`;
+  $('toasts').appendChild(el);
+  setTimeout(() => { el.style.transition = 'opacity .3s, transform .3s'; el.style.opacity = '0'; el.style.transform = 'translateY(8px)'; }, 3200);
+  setTimeout(() => el.remove(), 3600);
+}
+function toggleVisibility(id) { const el = $(id); el.type = el.type === 'password' ? 'text' : 'password'; }
+function upstreamModeFor(cfg, backend) { return cfg[`${backend}_upstream_mode`] || (healthInfo.upstream_modes || {})[backend] || 'openai'; }
+function baseUrlFor(cfg, backend) { return cfg[`${backend}_base_url`] || ''; }
+function hostOf(url) { try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return url || ''; } }
+function glyphOf(name) { return (String(name || '?').replace(/[^A-Za-z0-9一-龥]/g, '').slice(0, 2) || 'CS').toUpperCase(); }
+
+// ════════════════════════ Nav ════════════════════════
+function renderNav() {
+  const html = NAV.map(n =>
+    `<button class="nav-item" data-view="${n.id}" onclick="go('${n.id}')">
+       <span class="ico">${n.ico}</span><span>${n.label}</span>
+       ${n.id === 'models' ? '<span class="badge" id="navMenuBadge">0</span>' : ''}
+       ${n.id === 'logs' ? '<span class="badge" id="navLogBadge">0</span>' : ''}
+     </button>`).join('');
+  $('navDesktop').innerHTML = html;
+  $('navMobile').innerHTML = html;
+}
+function go(view) {
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  if (view === 'logs') loadLogs();
+  if (view === 'advanced') renderRawConfig();
+  if (view === 'advanced') renderUpdateInfo();
+  if (view === 'models') renderCurrentMapping();
+  window.scrollTo(0, 0);
 }
 
-function escapeHtml(value) {
-  return String(value || '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
+// ════════════════════════ Data ════════════════════════
+async function refreshAll() {
+  await Promise.all([loadHealth(), loadConfig(), loadProviderData()]);
+  loadMenuModels(); loadLogs();
 }
-
-function jsArg(value) {
-  return JSON.stringify(String(value || ''))
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e');
-}
-
-let providerPresets = {};
-let providerProfiles = [];
-let fetchedModels = [];
-let currentConfig = {};
-
-async function loadProviderPresets() {
-  try {
-    const res = await api('/api/provider-presets');
-    providerPresets = res.presets || {};
-    const select = document.getElementById('providerPreset');
-    select.innerHTML = Object.entries(providerPresets).map(([id, preset]) =>
-      `<option value="${escapeHtml(id)}">${escapeHtml(preset.label || id)}</option>`
-    ).join('');
-  } catch(e) { console.error('Load provider presets failed:', e); }
-}
-
-async function loadProviderProfiles() {
-  try {
-    const res = await api('/api/provider-profiles');
-    providerProfiles = res.profiles || [];
-    const select = document.getElementById('providerProfile');
-    select.innerHTML = providerProfiles.map(profile => {
-      const mark = profile.builtin ? '内置' : '自定义';
-      const active = profile.id === res.active_profile_id ? ' · 当前' : '';
-      return `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.label || profile.id)} (${mark}${active})</option>`;
-    }).join('');
-    renderProviderCards();
-  } catch(e) { console.error('Load provider profiles failed:', e); }
-}
-
-// ── Toggle password visibility ──
-function toggleVisibility(id) {
-  const el = document.getElementById(id);
-  el.type = el.type === 'password' ? 'text' : 'password';
-}
-
-// ── Load config ──
+async function loadHealth() { try { healthInfo = await api('/health'); } catch (e) { healthInfo = {}; } renderStatusBar(); renderNow(); renderUpdateInfo(); }
 async function loadConfig() {
   try {
-    const cfg = await api('/api/config');
-    currentConfig = cfg;
-    // Don't pre-fill API keys (they're masked by the server)
-    // Only show placeholder to indicate whether key is configured
-    document.getElementById('deepseekKey').placeholder = cfg.deepseek_api_key ? '(已配置，输入新 key 可覆盖)' : 'sk-...';
-    document.getElementById('deepseekBase').value = cfg.deepseek_base_url || 'https://api.deepseek.com';
-    document.getElementById('deepseekMode').value = cfg.deepseek_upstream_mode || 'openai';
-    document.getElementById('openaiKey').placeholder = cfg.openai_api_key ? '(已配置，输入新 key 可覆盖)' : 'sk-...';
-    document.getElementById('openaiBase').value = cfg.openai_base_url || 'https://api.openai.com';
-    document.getElementById('openaiMode').value = cfg.openai_upstream_mode || 'openai';
-    document.getElementById('customKey').placeholder = cfg.custom_api_key ? '(已配置，输入新 key 可覆盖)' : 'sk-...';
-    document.getElementById('customBase').value = cfg.custom_base_url || '';
-    document.getElementById('customMode').value = cfg.custom_upstream_mode || 'openai';
-    document.getElementById('defaultBackend').value = cfg.default_backend || 'deepseek';
-    document.getElementById('forceModel').value = cfg.force_model || '';
-    document.getElementById('modelListMode').value = cfg.model_list_mode || 'aliases_first';
-    document.getElementById('modelMenuStrategy').value = cfg.model_menu_strategy || 'claude_compatible';
-    document.getElementById('modelAliases').value = JSON.stringify(cfg.model_aliases || [], null, 2);
-    document.getElementById('modelTokenCaps').value = JSON.stringify(cfg.model_token_caps || {}, null, 2);
-    document.getElementById('defaultMaxTokensCap').value = cfg.default_max_tokens_cap || 0;
-    document.getElementById('proxyAuthMode').value = cfg.proxy_auth_mode || 'optional';
-    document.getElementById('proxyAuthToken').placeholder = cfg.proxy_auth_token ? '(已配置，输入新 token 可覆盖)' : '留空关闭';
-    document.getElementById('deepseekModelMap').value = JSON.stringify(cfg.deepseek_model_map || {}, null, 2);
-    document.getElementById('openaiModelMap').value = JSON.stringify(cfg.openai_model_map || {}, null, 2);
-    document.getElementById('customModelMap').value = JSON.stringify(cfg.custom_model_map || {}, null, 2);
-    document.getElementById('deepseekPattern').value = cfg.deepseek_model_pattern || 'deepseek|deep-seek';
-    document.getElementById('openaiPattern').value = cfg.openai_model_pattern || '^(gpt-|o1|o3|o4|chatgpt)';
-    document.getElementById('customPattern').value = cfg.custom_model_pattern || '';
-    document.getElementById('reasoningPolicy').value = cfg.reasoning_content_policy || 'never';
-    document.getElementById('inlineImagePolicy').value = cfg.inline_image_policy || 'auto';
-    updateProviderStatus(cfg);
-    renderSwitchSummary(cfg);
-    renderProviderCards();
-  } catch(e) { console.error('Load config failed:', e); }
+    currentConfig = (await api('/api/config')) || {};
+    bindConfigToForms(currentConfig);
+    renderStatusBar(); renderNow(); renderProviderList(); renderCurrentMapping();
+  } catch (e) { console.error('loadConfig', e); }
+}
+async function loadProviderData() {
+  try { providerPresets = (await api('/api/provider-presets')).presets || {}; } catch (e) { providerPresets = {}; }
+  try { const r = await api('/api/provider-profiles'); providerProfiles = r.profiles || []; activeProfileId = r.active_profile_id || ''; }
+  catch (e) { providerProfiles = []; }
+  renderProviderList(); renderNow(); renderPresetGrid();
+}
+async function loadMenuModels() {
+  try {
+    const models = (await api('/v1/models')).data || [];
+    const b = $('navMenuBadge'); if (b) b.textContent = models.length;
+    $('sbMenu').textContent = models.length + ' 个';
+  } catch (e) {}
+}
+async function loadUpdateInfo(refresh = false) {
+  try {
+    updateInfo = await api('/api/update-check' + (refresh ? '?refresh=1' : ''));
+  } catch (e) {
+    updateInfo = { ok: false, current_version: healthInfo.app_version || '–', latest_version: '–', error: e.message };
+  }
+  renderUpdateInfo();
+  const tag = updateInfo.latest_tag || updateInfo.latest_version || '';
+  if (updateInfo.update_available && localStorage.getItem('csBridgeUpdateSeen') !== tag) {
+    toast(`发现新版本 ${tag}`, 'info');
+    localStorage.setItem('csBridgeUpdateSeen', tag);
+  }
+}
+async function loadUpdateInstallState() {
+  try {
+    const res = await api('/api/update-install');
+    updateInstallState = res.install || {};
+  } catch (e) {
+    updateInstallState = { status: 'unknown', message: e.message };
+  }
+  renderUpdateInstallState();
+  if (updateInstallState.running) startUpdateInstallPolling();
 }
 
-function renderSwitchSummary(cfg) {
-  const backend = cfg.default_backend || '-';
-  document.getElementById('switchCurrentBackend').textContent = backend;
-  document.getElementById('switchCurrentModel').textContent = cfg.force_model || '-';
-  const modes = cfg.upstream_modes || {};
-  document.getElementById('switchCurrentMode').textContent = modes[backend] || '-';
-  document.getElementById('switchMenuStrategy').textContent = cfg.model_menu_strategy || '-';
-  const aliases = cfg.model_aliases || [];
-  document.getElementById('switchModelChips').innerHTML = aliases.length
-    ? aliases.map(a => `<span class="chip">${escapeHtml(a.display_name || a.model || a.id)}</span>`).join('')
-    : '<span class="chip">No menu models</span>';
-  document.getElementById('switchHint').textContent =
-    `ANTHROPIC_BASE_URL=http://${cfg.proxy_host || '127.0.0.1'}:${cfg.proxy_port || 9876}`;
+// ════════════════════════ Status bar + Now banner ════════════════════════
+function renderStatusBar() {
+  const running = healthInfo && healthInfo.status === 'ok';
+  $('sbDot').className = 'dot ' + (running ? 'on' : 'off');
+  $('sbProxy').textContent = running ? 'Running' : 'Stopped';
+  $('sbBase').textContent = `${currentConfig.proxy_host || '127.0.0.1'}:${currentConfig.proxy_port || 9876}`;
+  $('sbProvider').textContent = currentProviderName();
+  if ($('sbVersion')) $('sbVersion').textContent = healthInfo.app_version ? `v${healthInfo.app_version}` : '–';
+}
+function currentProviderName() {
+  const active = providerProfiles.find(p => p.id === activeProfileId);
+  if (active) return active.label;
+  const backend = currentConfig.default_backend || '';
+  const base = baseUrlFor(currentConfig, backend);
+  return base ? `${backend} · ${hostOf(base)}` : (backend || '–');
+}
+function renderNow() {
+  const backend = currentConfig.default_backend || '–';
+  const name = currentProviderName();
+  $('nowGlyph').textContent = glyphOf(name);
+  $('nowName').textContent = name;
+  const base = baseUrlFor(currentConfig, backend) || (backend === 'openai' ? 'https://api.openai.com' : '');
+  const proto = upstreamModeFor(currentConfig, backend) === 'anthropic' ? 'Anthropic 原生' : 'OpenAI 兼容';
+  $('nowSub').textContent = `${base || '未配置'} · ${proto} · 默认 ${currentConfig.force_model || '透传'}`;
 }
 
-function profileModels(profile) {
-  const models = profile.models || [];
-  if (models.length) return models;
-  if (profile.default_model) return [{ id: profile.default_model, display_name: profile.default_model }];
+function renderUpdateInfo() {
+  const current = updateInfo.current_version || healthInfo.app_version || '–';
+  const latest = updateInfo.latest_tag || (updateInfo.latest_version ? `v${updateInfo.latest_version}` : '–');
+  if ($('currentVersion')) $('currentVersion').value = current === '–' ? '–' : `v${current}`;
+  if ($('latestVersion')) $('latestVersion').value = latest;
+  const result = $('updateResult');
+  if (result) {
+    result.className = 'result-box show ' + (updateInfo.update_available ? 'bad' : (updateInfo.ok ? 'ok' : ''));
+    if (updateInfo.update_available) {
+      result.innerHTML = `<strong>发现新版本</strong><div class="rtxt">当前 v${escapeHtml(current)}，最新版 ${escapeHtml(latest)}。可直接点击一键更新。</div>`;
+    } else if (updateInfo.ok) {
+      result.innerHTML = `<strong>已是最新版</strong><div class="rtxt">当前 v${escapeHtml(current)}，GitHub 最新版 ${escapeHtml(latest)}。</div>`;
+    } else {
+      result.innerHTML = `<strong>暂时无法检查更新</strong><div class="rtxt">${escapeHtml(updateInfo.error || '网络不可用或 GitHub 暂不可达。')}</div>`;
+    }
+  }
+  if ($('updatePanelSub')) $('updatePanelSub').textContent = updateInfo.checked_at ? `上次检查 ${updateInfo.checked_at}` : '检查 GitHub Release';
+  const banner = $('updateBanner');
+  if (banner) {
+    const dismissed = localStorage.getItem('csBridgeUpdateDismissed') === (updateInfo.latest_tag || updateInfo.latest_version || '');
+    banner.classList.toggle('show', Boolean(updateInfo.update_available && !dismissed));
+    if (updateInfo.update_available) {
+      $('updateBannerTitle').textContent = `发现新版本 ${latest}`;
+      $('updateBannerMsg').textContent = `当前 v${current}，点一键更新即可自动下载并安装。`;
+    }
+  }
+  renderUpdateInstallState();
+}
+function renderUpdateInstallState() {
+  const running = Boolean(updateInstallState && updateInstallState.running);
+  const status = (updateInstallState && updateInstallState.status) || 'idle';
+  const canInstall = Boolean(updateInfo && updateInfo.ok && updateInfo.update_available);
+  for (const id of ['installUpdateBtn', 'bannerInstallUpdateBtn']) {
+    const btn = $(id);
+    if (!btn) continue;
+    btn.disabled = running || !canInstall;
+    if (running) btn.textContent = '更新中…';
+    else if (canInstall) btn.textContent = '一键更新';
+    else btn.textContent = '已是最新版';
+  }
+
+  const box = $('updateInstallResult');
+  if (!box) return;
+  if (!running && ['idle', '', 'unknown'].includes(status)) {
+    box.style.display = 'none';
+    return;
+  }
+  const cls = status === 'succeeded' ? 'ok' : (status === 'failed' ? 'bad' : '');
+  box.className = `result-box show ${cls}`;
+  box.style.display = 'block';
+  const target = updateInstallState.latest_tag || updateInstallState.target_version || '';
+  const phaseText = updateInstallState.phase ? ` · ${updateInstallState.phase}` : '';
+  const title = status === 'succeeded' ? '更新安装完成' : (status === 'failed' ? '更新失败' : `正在更新${target ? '到 ' + target : ''}`);
+  const msg = updateInstallState.message || (running ? '正在下载安装包并安装。' : '');
+  const logs = (updateInstallState.log || []).slice(-8).map(escapeHtml).join('\n');
+  box.innerHTML = `<strong>${escapeHtml(title)}</strong><div class="rtxt">${escapeHtml(msg)}${escapeHtml(phaseText)}</div>${logs ? `<div class="mini-log">${logs}</div>` : ''}`;
+}
+function startUpdateInstallPolling() {
+  if (updateInstallTimer) return;
+  updateInstallTimer = setInterval(async () => {
+    await loadUpdateInstallState();
+    const status = updateInstallState.status || '';
+    if (!updateInstallState.running) {
+      clearInterval(updateInstallTimer);
+      updateInstallTimer = null;
+      if (status && status !== lastInstallStatus) {
+        if (status === 'succeeded') toast('更新已安装，正在重新打开 App', 'success');
+        if (status === 'failed') toast('更新安装失败，请查看日志', 'error');
+        lastInstallStatus = status;
+      }
+      if (status === 'succeeded') {
+        setTimeout(() => loadUpdateInfo(true), 2500);
+      }
+    }
+  }, 2500);
+}
+async function checkUpdatesNow() {
+  const btn = $('checkUpdateBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '检查中…'; }
+  await loadUpdateInfo(true);
+  if (btn) { btn.disabled = false; btn.textContent = '检查更新'; }
+  if (updateInfo.update_available) toast('发现可用更新', 'info');
+  else if (updateInfo.ok) toast('当前已是最新版', 'success');
+  else toast('检查更新失败', 'error');
+}
+async function installUpdateNow() {
+  if (!(updateInfo && updateInfo.update_available)) {
+    await loadUpdateInfo(true);
+  }
+  if (!(updateInfo && updateInfo.update_available)) {
+    toast(updateInfo && updateInfo.ok ? '当前已是最新版' : '没有可安装的更新', updateInfo && updateInfo.ok ? 'success' : 'error');
+    return;
+  }
+  for (const id of ['installUpdateBtn', 'bannerInstallUpdateBtn']) {
+    const btn = $(id);
+    if (btn) { btn.disabled = true; btn.textContent = '启动中…'; }
+  }
+  try {
+    const res = await api('/api/update-install', { method: 'POST' });
+    updateInstallState = res.install || {};
+    renderUpdateInstallState();
+    if (res.ok) {
+      toast('已开始后台更新', 'success');
+      startUpdateInstallPolling();
+    } else {
+      toast('启动更新失败：' + (res.error || ''), 'error');
+      await loadUpdateInstallState();
+    }
+  } catch (e) {
+    toast('启动更新失败：' + e.message, 'error');
+    await loadUpdateInstallState();
+  }
+}
+function openLatestRelease() {
+  window.open(updateInfo.html_url || 'https://github.com/Jyx0208/claude-science-api-bridge/releases/latest', '_blank', 'noopener');
+}
+function copyUpdateCommand() {
+  const cmd = updateInfo.install_command || 'curl -fsSL https://raw.githubusercontent.com/Jyx0208/claude-science-api-bridge/main/scripts/install-macos-app.sh | bash';
+  navigator.clipboard.writeText(cmd).then(() => toast('已复制更新命令', 'success'));
+}
+function dismissUpdateBanner() {
+  const tag = updateInfo.latest_tag || updateInfo.latest_version || '';
+  if (tag) localStorage.setItem('csBridgeUpdateDismissed', tag);
+  renderUpdateInfo();
+}
+
+// ════════════════════════ Provider list (switchboard) ════════════════════════
+function profileModels(p) {
+  const m = p.models || [];
+  if (m.length) return m;
+  if (p.default_model) return [{ id: p.default_model, display_name: p.default_model }];
   return [];
 }
-
-function modelPriority(model, preferredIds=[]) {
-  const id = String(model.id || model.model || '').toLowerCase();
-  const preferredIndex = preferredIds.findIndex(v => String(v || '').toLowerCase() === id);
-  if (preferredIndex >= 0) return [0, preferredIndex, id];
-  const nonChat = ['embedding', 'embed', 'bge-', 'reranker', 'ocr', 'image', 'kolors', 'voice', 'audio', 'whisper', 'tts'];
-  if (nonChat.some(k => id.includes(k))) return [4, 0, id];
-  const likelyChat = ['kimi', 'deepseek', 'qwen', 'glm', 'gpt', 'claude', 'moonshot', 'minimax', 'mistral', 'coder', 'chat', 'instruct', 'vl'];
-  if (likelyChat.some(k => id.includes(k))) return [1, 0, id];
-  return [2, 0, id];
+function sameBase(a, b) { return String(a || '').replace(/\/+$/, '') === String(b || '').replace(/\/+$/, ''); }
+function isProfileActive(p) {
+  if (!p) return false;
+  if (activeProfileId) return activeProfileId === p.id;
+  if ((currentConfig.default_backend || '') !== (p.backend || '')) return false;
+  if (p.base_url && !sameBase(baseUrlFor(currentConfig, p.backend), p.base_url)) return false;
+  const ms = profileModels(p).map(m => m.id || m.model).filter(Boolean);
+  return !ms.length || ms.includes(currentConfig.force_model);
 }
+function myProviders() { return providerProfiles.filter(p => !p.builtin); }
+function renderProviderList() {
+  const wrap = $('providerListWrap');
+  if (!wrap) return;
+  const q = String($('providerSearch') && $('providerSearch').value || '').trim().toLowerCase();
+  let list = myProviders();
+  if (q) list = list.filter(p => [p.label, p.backend, p.base_url, ...profileModels(p).map(m => m.display_name || m.id)].join(' ').toLowerCase().includes(q));
 
-function rankFetchedModels(models, preferredModels=[]) {
-  const preferredIds = preferredModels.map(m => m.id || m.model).filter(Boolean);
-  return [...(models || [])].sort((a, b) => {
-    const pa = modelPriority(a, preferredIds);
-    const pb = modelPriority(b, preferredIds);
-    return pa[0] - pb[0] || pa[1] - pb[1] || pa[2].localeCompare(pb[2]);
-  });
-}
+  // banner: current live config not saved as a profile
+  let bannerHtml = '';
+  const liveMatchesSaved = myProviders().some(isProfileActive);
+  if (!liveMatchesSaved && (currentConfig.model_aliases || []).length) {
+    bannerHtml = `<div class="empty-add" style="padding:16px 18px;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+      <div><strong style="color:var(--text)">当前正在使用一个未保存的配置</strong>
+      <div style="font-size:12.5px;margin-top:2px">${escapeHtml(currentProviderName())} — 保存后即可一键切换回来。</div></div>
+      <button class="btn" onclick="saveCurrentAsProvider()">保存为 Provider</button></div>`;
+  }
 
-function sameBase(a, b) {
-  return String(a || '').replace(/\/+$/, '') === String(b || '').replace(/\/+$/, '');
-}
-
-function isProfileActive(profile) {
-  if (!profile || !currentConfig) return false;
-  if (currentConfig.active_profile_id && currentConfig.active_profile_id === profile.id) return true;
-  if ((currentConfig.default_backend || '') !== (profile.backend || '')) return false;
-  const cfgBase = profile.backend === 'deepseek'
-    ? currentConfig.deepseek_base_url
-    : profile.backend === 'openai'
-      ? currentConfig.openai_base_url
-      : currentConfig.custom_base_url;
-  if (profile.base_url && !sameBase(cfgBase, profile.base_url)) return false;
-  const models = profileModels(profile).map(m => m.id || m.model).filter(Boolean);
-  return !models.length || models.includes(currentConfig.force_model);
-}
-
-function renderProviderCards() {
-  const grid = document.getElementById('providerCards');
-  if (!grid) return;
-  const query = String(document.getElementById('providerSearch')?.value || '').trim().toLowerCase();
-  const profiles = providerProfiles.filter(profile => {
-    const haystack = [
-      profile.label, profile.id, profile.backend, profile.base_url, profile.upstream_mode,
-      ...profileModels(profile).map(m => `${m.id || ''} ${m.display_name || ''}`),
-    ].join(' ').toLowerCase();
-    return !query || haystack.includes(query);
-  });
-  if (!profiles.length) {
-    grid.innerHTML = '<div class="log-empty" style="grid-column:1/-1">没有匹配的 provider</div>';
+  if (!list.length && !q) {
+    wrap.innerHTML = bannerHtml + `<div class="empty-add">
+      <h3>还没有添加 Provider</h3>
+      <p>添加你的第一个第三方 API：选一个预设、粘贴 Key、保存即可一键切换。</p>
+      <button class="btn primary" onclick="openProviderModal('add')">＋ 添加 Provider</button>
+    </div>`;
     return;
   }
-  grid.innerHTML = profiles.map(profile => {
-    const active = isProfileActive(profile);
-    const models = profileModels(profile).slice(0, 4);
-    const modelBadges = models.length
-      ? models.map(m => `<span class="mini-badge">${escapeHtml(m.display_name || m.id || m.model)}</span>`).join('')
-      : '<span class="mini-badge">No models</span>';
-    const built = profile.builtin ? '内置' : '自定义';
-    const idArg = jsArg(profile.id);
-    const deleteButton = profile.builtin ? '' : `<button class="btn btn-danger btn-sm" onclick="deleteProviderProfileById(${idArg})">删除</button>`;
-    return `
-      <div class="switch-card ${active ? 'active' : ''}">
-        <div class="switch-card-head">
-          <div style="min-width:0">
-            <div class="switch-card-title">${escapeHtml(profile.label || profile.id)}</div>
-            <div class="switch-card-meta">${escapeHtml(profile.base_url || 'local config')}</div>
-          </div>
-          <span class="mini-badge ${active ? 'active-badge' : ''}">${active ? '当前' : built}</span>
-        </div>
-        <div class="switch-card-meta">${escapeHtml(profile.backend || 'custom')} · ${escapeHtml(profile.upstream_mode || 'openai')}</div>
-        <div class="switch-card-models">${modelBadges}</div>
-        <div class="switch-card-actions">
-          <button class="btn btn-primary btn-sm" onclick="activateProviderProfileFromCard(${idArg})">切换</button>
-          <button class="btn btn-outline btn-sm" onclick="fetchModelsForProfile(${idArg})">拉模型</button>
-          ${deleteButton}
-        </div>
+  if (!list.length) { wrap.innerHTML = '<div class="empty">没有匹配的 Provider</div>'; return; }
+
+  wrap.innerHTML = bannerHtml + '<div class="prov-list">' + list.map(p => {
+    const active = isProfileActive(p);
+    const models = profileModels(p).slice(0, 3);
+    const badges = models.map(m => `<span class="tag">${escapeHtml(m.display_name || m.id || m.model)}</span>`).join('') || '<span class="tag">无模型</span>';
+    const proto = p.upstream_mode === 'anthropic' ? 'Anthropic 原生' : 'OpenAI 兼容';
+    const idA = jsArg(p.id);
+    return `<div class="prov ${active ? 'active' : ''}" onclick="switchToProfile(${idA})">
+      <div class="prov-radio"></div>
+      <div class="prov-body">
+        <div class="prov-name"><span class="nm">${escapeHtml(p.label || p.id)}</span>${active ? '<span class="tag solid-green">使用中</span>' : ''}</div>
+        <div class="prov-meta"><span class="tag">${escapeHtml(p.backend)}</span><span class="tag">${proto}</span><span class="url">${escapeHtml(p.base_url || '')}</span></div>
+        <div class="prov-models">${badges}</div>
       </div>
-    `;
-  }).join('');
+      <div class="prov-actions" onclick="event.stopPropagation()">
+        <button class="btn sm icon" title="编辑" onclick="openProviderModal('edit', ${idA})">✎</button>
+        <button class="btn sm icon" title="复制" onclick="duplicateProvider(${idA})">⧉</button>
+        <button class="btn sm icon danger" title="删除" onclick="deleteProvider(${idA})">🗑</button>
+      </div>
+    </div>`;
+  }).join('') + '</div>';
 }
-
-function updateProviderStatus(cfg) {
-  const ds = document.getElementById('deepseekStatus');
-  const oa = document.getElementById('openaiStatus');
-  const cu = document.getElementById('customStatus');
-  ds.textContent = cfg.deepseek_api_key ? '✅ 已配置' : '⚠ 未配置';
-  ds.style.color = cfg.deepseek_api_key ? 'var(--green)' : 'var(--yellow)';
-  oa.textContent = cfg.openai_api_key ? '✅ 已配置' : '⚠ 未配置';
-  oa.style.color = cfg.openai_api_key ? 'var(--green)' : 'var(--yellow)';
-  cu.textContent = cfg.custom_api_key && cfg.custom_base_url ? '✅ 已配置' : '⚠ 未配置';
-  cu.style.color = cfg.custom_api_key && cfg.custom_base_url ? 'var(--green)' : 'var(--yellow)';
-}
-
-async function applyProviderPreset() {
-  const id = document.getElementById('providerPreset').value;
-  const preset = providerPresets[id];
-  if (!preset) { toast('请选择 Provider 预设', 'error'); return; }
-
-  const proxyAuthToken = document.getElementById('proxyAuthToken').value;
-  const body = {
-    default_backend: preset.backend,
-    force_model: preset.default_model || '',
-    model_aliases: preset.model_aliases || [],
-    model_list_mode: 'aliases',
-    model_menu_strategy: 'claude_compatible',
-  };
-  if (preset.backend === 'deepseek') {
-    body.deepseek_base_url = preset.base_url;
-    body.deepseek_upstream_mode = preset.upstream_mode || 'openai';
-  } else if (preset.backend === 'openai') {
-    body.openai_base_url = preset.base_url;
-    body.openai_upstream_mode = preset.upstream_mode || 'openai';
-  } else {
-    body.custom_base_url = preset.base_url;
-    body.custom_upstream_mode = preset.upstream_mode || 'openai';
-  }
-
-  const res = await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
-  if (res.ok) {
-    toast('Provider 预设已应用', 'success');
-    loadConfig();
-    loadProviderProfiles();
-  } else {
-    toast('应用预设失败: ' + (res.error || ''), 'error');
-  }
-}
-
-async function activateProviderProfile() {
-  const id = document.getElementById('providerProfile').value;
-  if (!id) { toast('请选择配置档', 'error'); return; }
-  await activateProviderProfileFromCard(id);
-}
-
-async function activateProviderProfileFromCard(id) {
+async function switchToProfile(id) {
   const res = await api(`/api/provider-profiles/${encodeURIComponent(id)}/activate`, { method: 'POST' });
   if (res.ok) {
-    toast('配置档已应用', 'success');
-    await loadConfig();
-    await loadProviderProfiles();
-  } else {
-    toast('应用失败: ' + (res.error || ''), 'error');
-  }
+    toast('已切换 Provider', 'success');
+    await Promise.all([loadConfig(), loadProviderData(), loadHealth()]);
+    loadMenuModels();
+  } else { toast('切换失败：' + (res.error || ''), 'error'); }
 }
-
-function currentProviderSettings(provider) {
-  return {
-    provider,
-    backend: provider,
-    api_key: document.getElementById(provider + 'Key').value,
-    base_url: document.getElementById(provider + 'Base').value,
-    upstream_mode: document.getElementById(provider + 'Mode').value,
-  };
+async function duplicateProvider(id) {
+  const p = providerProfiles.find(x => x.id === id);
+  if (!p) return;
+  const res = await api('/api/provider-profiles', { method: 'POST', body: JSON.stringify({
+    id: `profile-${p.backend}-${Date.now()}`, label: `${p.label} 副本`, backend: p.backend,
+    base_url: p.base_url, upstream_mode: p.upstream_mode, default_model: p.default_model,
+    models: p.models, model_menu_strategy: p.model_menu_strategy, inline_image_policy: p.inline_image_policy,
+  }) });
+  // note: api_key not copied (masked); user re-enters via edit
+  if (res.ok) { toast('已复制（需重新填写 Key）', 'success'); loadProviderData(); }
+  else toast('复制失败：' + (res.error || ''), 'error');
 }
-
-async function saveCurrentProfile() {
-  const provider = document.getElementById('defaultBackend').value || 'custom';
-  let modelAliases = [];
-  try { modelAliases = JSON.parse(document.getElementById('modelAliases').value || '[]'); } catch(e) { toast('第三方模型别名 JSON 格式错误', 'error'); return; }
-  const settings = currentProviderSettings(provider);
-  const models = modelAliases.map(a => ({ id: a.model || a.id, display_name: a.display_name || a.model || a.id }));
-  const label = `${provider}:${document.getElementById('forceModel').value || (models[0] && models[0].id) || 'model'}`;
-  const res = await api('/api/provider-profiles', {
-    method: 'POST',
-    body: JSON.stringify({
-      id: `profile-${provider}-${Date.now()}`,
-      label,
-      backend: provider,
-      base_url: settings.base_url,
-      upstream_mode: settings.upstream_mode,
-      api_key: settings.api_key,
-      default_model: document.getElementById('forceModel').value,
-      models,
-      model_menu_strategy: document.getElementById('modelMenuStrategy').value,
-      inline_image_policy: document.getElementById('inlineImagePolicy').value,
-    })
-  });
-  if (res.ok) {
-    toast('当前配置已保存为配置档', 'success');
-    loadProviderProfiles();
-  } else {
-    toast('保存配置档失败: ' + (res.error || ''), 'error');
-  }
-}
-
-async function deleteProviderProfile() {
-  const id = document.getElementById('providerProfile').value;
-  await deleteProviderProfileById(id);
-}
-
-async function deleteProviderProfileById(id) {
-  const profile = providerProfiles.find(p => p.id === id);
-  if (!id || !profile) { toast('请选择配置档', 'error'); return; }
-  if (profile.builtin) { toast('内置配置档不能删除', 'error'); return; }
+async function deleteProvider(id) {
+  const p = providerProfiles.find(x => x.id === id);
+  if (!p || p.builtin) return;
+  if (!confirm(`删除 Provider「${p.label}」？`)) return;
   const res = await api(`/api/provider-profiles/${encodeURIComponent(id)}`, { method: 'DELETE' });
-  if (res.ok) {
-    toast('配置档已删除', 'success');
-    loadProviderProfiles();
-  } else {
-    toast('删除失败: ' + (res.error || ''), 'error');
-  }
+  if (res.ok) { toast('已删除', 'success'); loadProviderData(); }
+  else toast('删除失败：' + (res.error || ''), 'error');
+}
+async function saveCurrentAsProvider() {
+  openProviderModal('add');
+  const backend = currentConfig.default_backend || 'custom';
+  $('mName').value = currentProviderName();
+  $('mBackend').value = backend;
+  $('mMode').value = upstreamModeFor(currentConfig, backend);
+  $('mBase').value = baseUrlFor(currentConfig, backend);
+  $('mImage').value = currentConfig.inline_image_policy || 'preserve';
+  $('mKeyHint').textContent = '留空则沿用当前后端已配置的 Key；或粘贴新的 Key。';
+  modal.models = (currentConfig.model_aliases || []).map(a => ({ id: a.model, model: a.model, display_name: a.display_name, owned_by: '' }));
+  modal.selected = new Set(modal.models.map(m => m.id));
+  renderModalPicker();
 }
 
-function providerSettingsFromProfile(profile) {
-  const backend = profile.backend || 'custom';
-  return {
-    profile_id: profile.id || '',
-    provider: backend,
-    backend,
-    api_key: '',
-    base_url: profile.base_url || '',
-    upstream_mode: profile.upstream_mode || 'openai',
-    models_url: profile.models_url || '',
-    is_full_url: !!profile.is_full_url,
-  };
+// ════════════════════════ Add / Edit modal ════════════════════════
+function renderPresetGrid() {
+  const grid = $('presetGrid');
+  if (!grid) return;
+  grid.innerHTML = Object.entries(providerPresets).map(([id, p]) =>
+    `<button type="button" class="preset-btn" data-preset="${escapeHtml(id)}" onclick="applyPresetToModal('${escapeHtml(id)}')">
+       <span class="pt">${escapeHtml(p.label || id)}</span>
+       <span class="ps">${escapeHtml(hostOf(p.base_url) || p.base_url || '')}</span>
+     </button>`).join('') +
+    `<button type="button" class="preset-btn" data-preset="" onclick="applyPresetToModal('')">
+       <span class="pt">自定义</span><span class="ps">手动填写</span></button>`;
 }
-
-async function fetchModelsForProfile(id) {
-  const profile = providerProfiles.find(p => p.id === id);
-  if (!profile) { toast('Provider 不存在', 'error'); return; }
-  const settings = providerSettingsFromProfile(profile);
-  document.getElementById('modelFetchProvider').value = settings.provider;
-  document.getElementById('modelsUrlOverride').value = settings.models_url || '';
-  toast(`正在拉取 ${profile.label || profile.id} 模型列表...`, 'info');
-  const res = await api('/api/fetch-models', {
-    method: 'POST',
-    body: JSON.stringify(settings)
-  });
-  if (res.ok) {
-    const preferredModels = profileModels(profile);
-    fetchedModels = rankFetchedModels(res.models || [], preferredModels);
-    renderFetchedModels(fetchedModels, preferredModels);
-    document.getElementById('modelFetchHint').textContent = `获取到 ${fetchedModels.length} 个模型；已尝试 ${Array.from(new Set(res.attempted || [])).join(' , ')}`;
-    toast(`已获取 ${fetchedModels.length} 个模型`, 'success');
-    switchTab('routing');
-  } else {
-    toast('获取失败: ' + (res.error || ''), 'error');
-    document.getElementById('switchHint').textContent = res.error || '';
-  }
-}
-
-async function fetchModelsForCurrent() {
-  const provider = currentConfig.default_backend || 'custom';
-  document.getElementById('modelFetchProvider').value = provider;
-  await fetchModels();
-  switchTab('routing');
-}
-
-async function patchCurrentModelMenu() {
-  toast('正在补丁 Claude Science 模型菜单...', 'info');
-  const patched = await api('/api/patch-model-menu', { method: 'POST' });
-  if (patched.ok) {
-    toast('菜单补丁已完成，重启 Claude Science 后生效', 'success');
-  } else {
-    toast('菜单补丁失败: ' + (patched.error || ''), 'error');
-  }
-}
-
-// ── Save provider ──
-async function saveProvider(provider) {
-  const body = {};
-  if (provider === 'deepseek') {
-    body.deepseek_api_key = document.getElementById('deepseekKey').value;
-    body.deepseek_base_url = document.getElementById('deepseekBase').value;
-    body.deepseek_upstream_mode = document.getElementById('deepseekMode').value;
-  } else if (provider === 'openai') {
-    body.openai_api_key = document.getElementById('openaiKey').value;
-    body.openai_base_url = document.getElementById('openaiBase').value;
-    body.openai_upstream_mode = document.getElementById('openaiMode').value;
-  } else {
-    body.custom_api_key = document.getElementById('customKey').value;
-    body.custom_base_url = document.getElementById('customBase').value;
-    body.custom_upstream_mode = document.getElementById('customMode').value;
-  }
-  const res = await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
-  if (res.ok) {
-    toast(`${provider === 'deepseek' ? 'DeepSeek' : provider === 'openai' ? 'OpenAI' : 'Custom'} 配置已保存`, 'success');
-    loadConfig();
-  } else {
-    toast('保存失败: ' + (res.error || 'Unknown error'), 'error');
-  }
-}
-
-// ── Save routing ──
-async function saveRouting() {
-  let dsMap = {}, oaMap = {}, customMap = {}, modelAliases = [], modelTokenCaps = {};
-  try { modelAliases = JSON.parse(document.getElementById('modelAliases').value || '[]'); } catch(e) { toast('第三方模型别名 JSON 格式错误', 'error'); return; }
-  try { modelTokenCaps = JSON.parse(document.getElementById('modelTokenCaps').value || '{}'); } catch(e) { toast('max_tokens 上限 JSON 格式错误', 'error'); return; }
-  try { dsMap = JSON.parse(document.getElementById('deepseekModelMap').value || '{}'); } catch(e) { toast('DeepSeek 映射 JSON 格式错误', 'error'); return; }
-  try { oaMap = JSON.parse(document.getElementById('openaiModelMap').value || '{}'); } catch(e) { toast('OpenAI 映射 JSON 格式错误', 'error'); return; }
-  try { customMap = JSON.parse(document.getElementById('customModelMap').value || '{}'); } catch(e) { toast('Custom 映射 JSON 格式错误', 'error'); return; }
-
-  const body = {
-    default_backend: document.getElementById('defaultBackend').value,
-    force_model: document.getElementById('forceModel').value,
-    model_list_mode: document.getElementById('modelListMode').value,
-    model_menu_strategy: document.getElementById('modelMenuStrategy').value,
-    model_aliases: modelAliases,
-    model_token_caps: modelTokenCaps,
-    default_max_tokens_cap: Number(document.getElementById('defaultMaxTokensCap').value || 0),
-    proxy_auth_mode: document.getElementById('proxyAuthMode').value,
-    deepseek_upstream_mode: document.getElementById('deepseekMode').value,
-    openai_upstream_mode: document.getElementById('openaiMode').value,
-    custom_upstream_mode: document.getElementById('customMode').value,
-    deepseek_model_map: dsMap,
-    openai_model_map: oaMap,
-    custom_model_map: customMap,
-    deepseek_model_pattern: document.getElementById('deepseekPattern').value,
-    openai_model_pattern: document.getElementById('openaiPattern').value,
-    custom_model_pattern: document.getElementById('customPattern').value,
-    reasoning_content_policy: document.getElementById('reasoningPolicy').value,
-    inline_image_policy: document.getElementById('inlineImagePolicy').value,
-  };
-  const proxyAuthToken = document.getElementById('proxyAuthToken').value;
-  if (proxyAuthToken) body.proxy_auth_token = proxyAuthToken;
-  const res = await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
-  if (res.ok) {
-    toast('路由配置已保存，已即时生效', 'success');
-  } else {
-    toast('保存失败: ' + (res.error || ''), 'error');
-  }
-}
-
-function renderFetchedModels(models, preferredModels=[]) {
-  const list = document.getElementById('fetchedModelList');
-  if (!models || models.length === 0) {
-    list.innerHTML = '<div class="log-empty">没有获取到模型</div>';
-    return;
-  }
-  const preferredIds = new Set(preferredModels.map(m => m.id || m.model).filter(Boolean));
-  list.innerHTML = models.map((m, idx) => `
-    <label class="model-row">
-      <input type="checkbox" class="fetched-model-check" value="${idx}" ${(preferredIds.size ? preferredIds.has(m.id) : idx < 3) ? 'checked' : ''}>
-      <span class="model-id">${escapeHtml(m.id)}</span>
-      <span class="model-owner">${escapeHtml(m.owned_by || '')}</span>
-    </label>
-  `).join('');
-}
-
-async function fetchModels() {
-  const provider = document.getElementById('modelFetchProvider').value;
-  const settings = currentProviderSettings(provider);
-  const modelsUrl = document.getElementById('modelsUrlOverride').value;
-  toast('正在获取模型列表...', 'info');
-  const res = await api('/api/fetch-models', {
-    method: 'POST',
-    body: JSON.stringify({ ...settings, models_url: modelsUrl })
-  });
-  if (res.ok) {
-    fetchedModels = rankFetchedModels(res.models || []);
-    renderFetchedModels(fetchedModels);
-    document.getElementById('modelFetchHint').textContent = `获取到 ${fetchedModels.length} 个模型；已尝试 ${Array.from(new Set(res.attempted || [])).join(' , ')}`;
-    toast(`已获取 ${fetchedModels.length} 个模型`, 'success');
-  } else {
-    document.getElementById('modelFetchHint').textContent = res.error || '';
-    toast('获取失败: ' + (res.error || ''), 'error');
-  }
-}
-
-function selectedFetchedModels() {
-  return Array.from(document.querySelectorAll('.fetched-model-check:checked'))
-    .map(el => fetchedModels[Number(el.value)])
-    .filter(Boolean);
-}
-
-async function applyFetchedModels(patchMenu) {
-  const provider = document.getElementById('modelFetchProvider').value;
-  const models = selectedFetchedModels();
-  if (models.length === 0) { toast('请至少选择一个模型', 'error'); return; }
-  const res = await api('/api/apply-models', {
-    method: 'POST',
-    body: JSON.stringify({
-      provider,
-      models,
-      model_menu_strategy: document.getElementById('modelMenuStrategy').value,
-    })
-  });
-  if (!res.ok) {
-    toast('应用模型失败: ' + (res.error || ''), 'error');
-    return;
-  }
-  toast('模型已应用到路由配置', 'success');
-  await loadConfig();
-  if (patchMenu) {
-    const patched = await api('/api/patch-model-menu', { method: 'POST' });
-    if (patched.ok) {
-      toast('daemon 菜单补丁已完成，重启 Claude Science 后生效', 'success');
-    } else {
-      toast('菜单补丁失败: ' + (patched.error || ''), 'error');
+function openProviderModal(mode, id) {
+  modal = { mode, profileId: id || '', models: [], selected: new Set(), maskedKey: '', preset: '' };
+  $('modalTitle').textContent = mode === 'edit' ? '编辑 Provider' : '添加 Provider';
+  $('mDeleteBtn').style.display = mode === 'edit' ? '' : 'none';
+  $('presetField').style.display = mode === 'edit' ? 'none' : '';
+  $('mName').value = ''; $('mBackend').value = 'custom'; $('mMode').value = 'openai';
+  $('mBase').value = ''; $('mKey').value = ''; $('mKey').type = 'password'; $('mImage').value = 'preserve';
+  $('mFetchHint').textContent = ''; $('mKeyHint').textContent = 'Key 仅保存在本地 config.json，不会提交到 Git，也不会显示回前端。';
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('sel'));
+  if (mode === 'edit') {
+    const p = providerProfiles.find(x => x.id === id);
+    if (p) {
+      $('mName').value = p.label || '';
+      $('mBackend').value = p.backend || 'custom';
+      $('mMode').value = p.upstream_mode || 'openai';
+      $('mBase').value = p.base_url || '';
+      $('mImage').value = p.inline_image_policy || 'preserve';
+      modal.maskedKey = p.api_key || '';
+      $('mKey').placeholder = p.api_key ? '已配置，留空保持不变' : 'sk-...';
+      modal.models = profileModels(p).map(m => ({ id: m.id || m.model, model: m.id || m.model, display_name: m.display_name, owned_by: '' }));
+      modal.selected = new Set(modal.models.map(m => m.id));
     }
   }
+  renderModalPicker();
+  $('provModal').classList.add('show');
 }
-
-async function saveFetchedProfile() {
-  const provider = document.getElementById('modelFetchProvider').value;
-  const models = selectedFetchedModels();
-  if (models.length === 0) { toast('请至少选择一个模型', 'error'); return; }
-  const settings = currentProviderSettings(provider);
-  const label = `${provider}:${models[0].id}`;
-  const res = await api('/api/provider-profiles', {
-    method: 'POST',
-    body: JSON.stringify({
-      id: `profile-${provider}-${Date.now()}`,
-      label,
-      backend: provider,
-      base_url: settings.base_url,
-      upstream_mode: settings.upstream_mode,
-      api_key: settings.api_key,
-      default_model: models[0].id,
-      models,
-      model_menu_strategy: document.getElementById('modelMenuStrategy').value,
-      inline_image_policy: document.getElementById('inlineImagePolicy').value,
-      models_url: document.getElementById('modelsUrlOverride').value,
-    })
-  });
-  if (res.ok) {
-    toast('已保存为配置档', 'success');
-    loadProviderProfiles();
-  } else {
-    toast('保存失败: ' + (res.error || ''), 'error');
-  }
+function closeProviderModal() { $('provModal').classList.remove('show'); }
+function applyPresetToModal(id) {
+  modal.preset = id;
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.toggle('sel', b.dataset.preset === id));
+  if (!id) return;
+  const p = providerPresets[id];
+  if (!p) return;
+  $('mName').value = p.label || '';
+  $('mBackend').value = p.backend || 'custom';
+  $('mMode').value = p.upstream_mode || 'openai';
+  $('mBase').value = p.base_url || '';
+  $('mImage').value = p.inline_image_policy || 'preserve';
+  modal.models = (p.model_aliases || []).map(a => ({ id: a.model, model: a.model, display_name: a.display_name, owned_by: '' }));
+  modal.selected = new Set(modal.models.map(m => m.id));
+  renderModalPicker();
+  $('mFetchHint').textContent = '已带入推荐模型，填好 Key 可再「拉取模型列表」。';
 }
-
-// ── Test backend ──
-async function testBackend(provider) {
-  const key = document.getElementById(provider + 'Key').value;
-  const base = document.getElementById(provider + 'Base').value;
-  const upstreamMode = document.getElementById(provider + 'Mode').value;
-  if (!key) { toast('请先填入 API Key', 'error'); return; }
-
-  toast('正在测试连接...', 'info');
-  const res = await api('/api/test-backend', {
-    method: 'POST',
-    body: JSON.stringify({ provider, api_key: key, base_url: base, upstream_mode: upstreamMode })
-  });
-  if (res.ok) {
-    toast(`✅ ${provider === 'deepseek' ? 'DeepSeek' : 'OpenAI'} 连接成功！模型: ${res.models ? res.models.join(', ') : 'OK'}`, 'success');
-  } else {
-    toast(`❌ 连接失败: ${res.error || '未知错误'}`, 'error');
-  }
-}
-
-// ── One-click setup ──
-async function setGlobalEnv() {
-  toast('正在设置全局环境变量...', 'info');
-  const res = await api('/api/setup-global-env', { method: 'POST' });
-  if (res.ok) {
-    toast('✅ ANTHROPIC_BASE_URL 已设为全局环境变量', 'success');
-    document.getElementById('shellCmd').innerHTML =
-      `# 环境变量已全局设置，直接启动即可<br>open -a "Claude Science"<br><br># 或手动设置：<br>export ANTHROPIC_BASE_URL="${res.proxy_url}"`;
-  } else {
-    toast('⚠ 自动设置失败，请手动执行命令', 'error');
-  }
-}
-
-async function installService() {
-  toast('正在安装后台服务...', 'info');
-  const res = await api('/api/install-service', { method: 'POST' });
-  if (res.ok) {
-    toast('✅ LaunchAgent 已安装，proxy 将开机自启', 'success');
-  } else {
-    toast('⚠ 安装失败: ' + (res.error || ''), 'error');
-  }
-}
-
-async function refreshToken() {
-  toast('正在刷新 OAuth Token...', 'info');
-  const res = await api('/api/refresh-token', { method: 'POST' });
-  if (res.ok) {
-    toast('✅ OAuth Token 已刷新', 'success');
-  } else {
-    toast('❌ 刷新失败: ' + (res.error || ''), 'error');
-  }
-}
-
-async function copyCmd(type) {
-  const text = 'export ANTHROPIC_BASE_URL="http://127.0.0.1:9876"\nopen -a "Claude Science"';
-  await navigator.clipboard.writeText(text);
-  toast('📋 已复制到剪贴板', 'success');
-}
-
-// ── Logs ──
-async function loadLogs() {
+async function modalFetchModels() {
+  const backend = $('mBackend').value;
+  const base = $('mBase').value.trim();
+  const key = $('mKey').value.trim();
+  if (!base) { toast('请先填写 Base URL', 'error'); return; }
+  if (!key && !modal.maskedKey) { toast('请先粘贴 API Key', 'error'); return; }
+  const btn = $('mFetchBtn'); btn.disabled = true; btn.textContent = '拉取中…';
   try {
-    const res = await api('/api/recent-requests');
-    const list = document.getElementById('logList');
-    if (!res.requests || res.requests.length === 0) {
-      list.innerHTML = '<div class="log-empty">暂无请求记录</div>';
-      return;
+    const payload = { provider: backend, base_url: base, upstream_mode: $('mMode').value, models_url: '' };
+    if (key) payload.api_key = key; else if (modal.profileId) payload.profile_id = modal.profileId;
+    const res = await api('/api/fetch-models', { method: 'POST', body: JSON.stringify(payload) });
+    if (res.ok) {
+      const preferredOrder = [...modal.selected];
+      const preferred = new Set(preferredOrder.map(s => String(s).toLowerCase()));
+      modal.models = rankModels(res.models || [], preferredOrder);
+      let nextSelected = [
+        ...preferredOrder.filter(id => modal.models.some(m => String(m.id).toLowerCase() === String(id).toLowerCase())),
+        ...modal.models.filter(m => preferred.has(String(m.id).toLowerCase())).map(m => m.id),
+      ];
+      if (!nextSelected.length || (imagePolicyWantsVision($('mImage').value, backend) && !nextSelected.some(id => isVisionModel(modal.models.find(m => String(m.id).toLowerCase() === String(id).toLowerCase()))))) {
+        nextSelected = recommendedModelSet(modal.models, $('mImage').value, backend).map(m => m.id);
+      }
+      modal.selected = new Set(nextSelected);
+      renderModalPicker();
+      $('mFetchHint').textContent = `获取到 ${modal.models.length} 个模型`;
+      toast(`已获取 ${modal.models.length} 个模型`, 'success');
+    } else { $('mFetchHint').textContent = res.error || '获取失败'; toast('获取失败：' + (res.error || ''), 'error'); }
+  } finally { btn.disabled = false; btn.textContent = '↓ 拉取模型列表'; }
+}
+function renderModalPicker() {
+  const box = $('mPicker');
+  if (!modal.models.length) {
+    box.innerHTML = '<div class="empty">选择预设会自动带入推荐模型；或填好 Key 后点「拉取模型列表」。</div>';
+    return;
+  }
+  const ranked = rankModels(modal.models, [...modal.selected]);
+  box.innerHTML = ranked.map(m => {
+    const checked = modal.selected.has(m.id);
+    const c = classifyModel(m);
+    return `<label class="mrow ${checked ? 'checked' : ''}">
+      <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleModalModel(${jsArg(m.id)}, this.checked)">
+      <span class="mid">${escapeHtml(m.display_name && m.display_name !== m.id ? m.display_name + ' · ' : '')}${escapeHtml(m.id)}</span>
+      <span class="tag ${c.cls}">${c.label}</span>
+      <span class="mowner">${escapeHtml(m.owned_by || '')}</span>
+    </label>`;
+  }).join('');
+}
+function toggleModalModel(id, on) { if (on) modal.selected.add(id); else modal.selected.delete(id); renderModalPicker(); }
+function selectedModalModels() {
+  // preserve rank order, cap at slot count
+  return rankModels(modal.models, [...modal.selected]).filter(m => modal.selected.has(m.id));
+}
+async function saveProviderModal(activate) {
+  const label = $('mName').value.trim();
+  const backend = $('mBackend').value;
+  const base = $('mBase').value.trim();
+  const key = $('mKey').value.trim();
+  if (!label) { toast('请填写名称', 'error'); return; }
+  if (!base && backend === 'custom') { toast('请填写 Base URL', 'error'); return; }
+  const chosen = selectedModalModels();
+  const models = chosen.length ? chosen.map(m => ({ id: m.id, display_name: m.display_name || m.id })) : modal.models.map(m => ({ id: m.id, display_name: m.display_name || m.id }));
+  if (imagePolicyWantsVision($('mImage').value, backend) && models.length && !models.some(isVisionModel)) {
+    toast('当前图片策略需要视觉模型，请选择 Kimi K2.6 / Qwen3-VL / GPT-4o 等支持图片输入的模型。', 'error');
+    return;
+  }
+  const body = {
+    id: modal.mode === 'edit' ? modal.profileId : `profile-${backend}-${Date.now()}`,
+    label, backend, base_url: base, upstream_mode: $('mMode').value,
+    default_model: models[0] ? models[0].id : '',
+    models, model_menu_strategy: 'claude_compatible', inline_image_policy: $('mImage').value || 'omit',
+  };
+  if (key) body.api_key = key;
+  else if (modal.mode === 'edit' && modal.maskedKey) body.api_key = modal.maskedKey; // masked → backend keeps existing
+  const res = await api('/api/provider-profiles', { method: 'POST', body: JSON.stringify(body) });
+  if (!res.ok) { toast('保存失败：' + (res.error || ''), 'error'); return; }
+  toast(modal.mode === 'edit' ? '已更新' : '已添加', 'success');
+  closeProviderModal();
+  await loadProviderData();
+  if (activate) await switchToProfile(body.id);
+}
+async function deleteFromModal() { const id = modal.profileId; closeProviderModal(); await deleteProvider(id); }
+
+// ════════════════════════ Model ranking ════════════════════════
+function modelIdText(m) {
+  return String(m?.id || m?.model || '').toLowerCase().replace(/[\s_]+/g, '-');
+}
+function modelCapabilityText(m) {
+  return [m?.id, m?.model, m?.display_name, m?.name, m?.owned_by, m?.ownedBy]
+    .map(v => String(v || '').toLowerCase())
+    .join(' ')
+    .replace(/[\s_]+/g, '-');
+}
+function isNonChatModel(m) {
+  const id = modelIdText(m);
+  const nonChat = ['embedding','embed','bge-','bce-','reranker','rerank','ocr','image','kolors','flux','stable-diffusion','sd-','diffusion','voice','audio','whisper','tts','cosyvoice','video-generation'];
+  return nonChat.some(k => id.includes(k));
+}
+function isVisionModel(m) {
+  if (isNonChatModel(m)) return false;
+  const text = modelCapabilityText(m);
+  return [
+    /kimi[-/ ]?k2[.-]?6/,
+    /kimi[-/ ]?k2[.-]?5/,
+    /moonshot[-/ ]?v\d+.*vision/,
+    /qwen\d*(?:[.-]\d+)?[-/ ]?vl/,
+    /qwen[-/ ]?vl/,
+    /internvl/,
+    /glm[-/ ]?\d+(?:[.-]\d+)?v/,
+    /gpt[-/ ]?4o/,
+    /gpt[-/ ]?4[.-]?1/,
+    /gpt[-/ ]?5/,
+    /\bo[34](?:[-/ ]|$)/,
+    /gemini/,
+    /claude[-/ ]?3/,
+    /vision/,
+    /visual/,
+    /multi[-/ ]?modal/,
+    /multimodal/,
+    /llava/,
+    /pixtral/,
+    /molmo/,
+    /minicpm[-/ ]?v/,
+  ].some(re => re.test(text));
+}
+function imagePolicyWantsVision(policy, backend = '') {
+  const p = String(policy || '').toLowerCase();
+  if (p === 'preserve') return true;
+  if (p === 'auto') return String(backend || '').toLowerCase() !== 'deepseek';
+  return false;
+}
+function recommendedModelSet(models, policy, backend = '', limit = 2) {
+  const ranked = rankModels(models || []);
+  const vision = ranked.filter(isVisionModel);
+  if (imagePolicyWantsVision(policy, backend) && vision.length) return vision.slice(0, limit);
+  return ranked.filter(m => classifyModel(m).group <= 1).slice(0, limit);
+}
+function classifyModel(m) {
+  const id = modelIdText(m);
+  if (isNonChatModel(m)) {
+    let label = '其它';
+    if (id.includes('embed') || id.includes('bge') || id.includes('bce')) label = 'Embedding';
+    else if (id.includes('rerank')) label = 'Reranker';
+    else if (id.includes('image')||id.includes('kolors')||id.includes('flux')||id.includes('sd-')||id.includes('diffusion')) label = '图片生成';
+    else if (id.includes('audio')||id.includes('voice')||id.includes('tts')||id.includes('whisper')||id.includes('cosyvoice')) label = 'Audio';
+    else if (id.includes('video')) label = 'Video';
+    return { group: 3, label, cls: '' };
+  }
+  if (isVisionModel(m)) return { group: 0, label: '视觉', cls: 'green' };
+  const chat = ['kimi','deepseek','qwen','glm','gpt','o1','o3','o4','claude','moonshot','minimax','mistral','coder','chat','instruct','vl','llama','yi-','gemma','step','doubao','ernie','hunyuan','seed'];
+  if (chat.some(k => id.includes(k))) return { group: 1, label: '聊天', cls: 'blue' };
+  return { group: 2, label: '其它', cls: '' };
+}
+function rankModels(models, preferredOrder = []) {
+  const preferred = new Map(
+    preferredOrder
+      .map((id, idx) => [String(id || '').toLowerCase(), idx])
+      .filter(([id]) => id)
+  );
+  return [...(models || [])].map(m => ({ m, c: classifyModel(m) }))
+    .sort((a, b) => {
+      const aid = String(a.m.id || a.m.model || '').toLowerCase();
+      const bid = String(b.m.id || b.m.model || '').toLowerCase();
+      const ap = preferred.has(aid) ? preferred.get(aid) : Infinity;
+      const bp = preferred.has(bid) ? preferred.get(bid) : Infinity;
+      return ap - bp || a.c.group - b.c.group || aid.localeCompare(bid);
+    }).map(x => x.m);
+}
+
+// ════════════════════════ Models view (current provider) ════════════════════════
+function renderCurrentMapping() {
+  const aliases = currentConfig.model_aliases || [];
+  $('curMapBody').innerHTML = aliases.length
+    ? aliases.map(a => `<tr><td class="cell-clip">${escapeHtml(a.display_name || a.model || a.id)}</td><td class="mono">${escapeHtml(a.id)}</td><td class="mono cell-clip">${escapeHtml(a.model || '')}</td></tr>`).join('')
+    : '<tr><td colspan="3" class="empty">尚未配置模型映射。</td></tr>';
+  const sel = $('modelFetchProvider'); if (sel) sel.value = currentConfig.default_backend || 'custom';
+}
+let mvModels = [], mvSelected = new Set();
+async function fetchModelsForCurrent() {
+  const provider = $('modelFetchProvider').value;
+  const btn = $('fetchBtn'); btn.disabled = true; btn.textContent = '获取中…'; $('modelFetchHint').textContent = '';
+  try {
+    const res = await api('/api/fetch-models', { method: 'POST', body: JSON.stringify({ provider, models_url: $('modelsUrlOverride').value }) });
+    if (res.ok) {
+      const preferredOrder = (currentConfig.model_aliases || []).map(a => a.model).filter(Boolean);
+      mvModels = rankModels(res.models || [], preferredOrder);
+      const preferred = new Set(preferredOrder.map(a => String(a).toLowerCase()));
+      mvSelected = new Set(mvModels.filter(m => preferred.has(String(m.id).toLowerCase())).map(m => m.id));
+      if (!mvSelected.size || (imagePolicyWantsVision(currentConfig.inline_image_policy || 'auto', provider) && ![...mvSelected].some(id => isVisionModel(mvModels.find(m => String(m.id).toLowerCase() === String(id).toLowerCase()))))) {
+        mvSelected = new Set(recommendedModelSet(mvModels, currentConfig.inline_image_policy || 'auto', provider).map(m => m.id));
+      }
+      renderMvPicker();
+      $('modelFetchHint').textContent = `获取到 ${mvModels.length} 个模型`;
+      toast(`已获取 ${mvModels.length} 个模型`, 'success');
+    } else { $('modelFetchHint').textContent = res.error || '获取失败'; toast('获取失败：' + (res.error || ''), 'error'); }
+  } finally { btn.disabled = false; btn.textContent = '↓ 获取模型列表'; }
+}
+function renderMvPicker() {
+  const primary = [], other = [];
+  mvModels.forEach(m => (classifyModel(m).group <= 1 ? primary : other).push(m));
+  const row = m => {
+    const c = classifyModel(m), checked = mvSelected.has(m.id);
+    return `<label class="mrow ${checked ? 'checked' : ''}">
+      <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleMv(${jsArg(m.id)}, this.checked)">
+      <span class="mid">${escapeHtml(m.id)}</span><span class="tag ${c.cls}">${c.label}</span><span class="mowner">${escapeHtml(m.owned_by || '')}</span>
+    </label>`;
+  };
+  let html = '';
+  if (primary.length) html += `<div class="picker-group-title">推荐对话模型 <span class="count">· ${primary.length}</span></div>` + primary.map(row).join('');
+  if (other.length) html += `<details class="other-models"><summary>其它模型（embedding / reranker / image / audio）· ${other.length}</summary>${other.map(row).join('')}</details>`;
+  $('modelPicker').innerHTML = html || '<div class="empty">没有获取到模型</div>';
+  $('modelPickerPanel').style.display = 'block';
+  updateMvPreview();
+}
+function toggleMv(id, on) { if (on) mvSelected.add(id); else mvSelected.delete(id); renderMvPicker(); }
+function updateMvPreview() {
+  const sel = mvModels.filter(m => mvSelected.has(m.id)).slice(0, SLOT_IDS.length);
+  $('mapPreviewBody').innerHTML = sel.length
+    ? sel.map((m, i) => `<tr><td class="mono">${escapeHtml(SLOT_IDS[i])}</td><td class="cell-clip">${escapeHtml(m.display_name || m.id)}</td><td class="mono cell-clip">${escapeHtml(m.id)}</td></tr>`).join('')
+    : '<tr><td colspan="3" class="empty">勾选模型后显示映射</td></tr>';
+  const total = mvModels.filter(m => mvSelected.has(m.id)).length;
+  $('pickerSummary').textContent = `已选 ${total} 个` + (total > SLOT_IDS.length ? `（仅前 ${SLOT_IDS.length} 个生效）` : '');
+}
+async function applyFetchedModels(patch) {
+  const models = mvModels.filter(m => mvSelected.has(m.id));
+  if (!models.length) { toast('请至少选择一个模型', 'error'); return; }
+  const hasVision = models.some(isVisionModel);
+  const inlinePolicy = hasVision ? 'preserve' : (currentConfig.inline_image_policy || 'auto');
+  if (imagePolicyWantsVision(inlinePolicy, $('modelFetchProvider').value) && !hasVision) {
+    toast('当前图片策略需要视觉模型，请至少选择一个支持图片输入的模型。', 'error');
+    return;
+  }
+  const res = await api('/api/apply-models', { method: 'POST', body: JSON.stringify({ provider: $('modelFetchProvider').value, models, model_menu_strategy: currentConfig.model_menu_strategy || 'claude_compatible', inline_image_policy: inlinePolicy }) });
+  if (!res.ok) { toast('应用失败：' + (res.error || ''), 'error'); return; }
+  toast('模型已应用到菜单', 'success');
+  await loadConfig(); loadMenuModels();
+  if (patch) await patchMenu(); else toast('如需 Claude Science 菜单同步，请「补丁菜单」并重启', 'info');
+}
+
+// ════════════════════════ Quick actions ════════════════════════
+async function runTest() {
+  const btn = $('testBtn'), box = $('testResult');
+  const aliases = currentConfig.model_aliases || [];
+  const alias = aliases[0] || null;
+  const model = (alias && alias.id) || 'claude-opus-4-8';
+  const realModel = (alias && alias.model) || model;
+  const backend = currentConfig.default_backend || '';
+  btn.disabled = true; btn.textContent = '测试中…';
+  box.className = 'result-box show';
+  $('testResultTitle').textContent = `正在通过槽位 ${model} 请求后端 ${realModel}…`;
+  $('testResultText').textContent = '';
+  try {
+    const res = await fetch('/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, max_tokens: 32, messages: [{ role: 'user', content: '请只回复：OK' }] }) });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.content) {
+      const text = (data.content || []).map(b => b.text || '').join(' ').trim();
+      box.className = 'result-box show ok';
+      $('testResultTitle').textContent = `✓ 测试成功 · 实际后端模型 ${realModel}${backend ? ' (' + backend + ')' : ''}`;
+      $('testResultText').textContent = `Claude Science 槽位 ${model} → 真实模型 ${realModel}\n模型回复：${text || '(空响应，但请求成功)'}`;
+      toast('测试成功', 'success');
+    } else {
+      box.className = 'result-box show bad';
+      $('testResultTitle').textContent = `✕ 测试失败 (HTTP ${res.status})`;
+      $('testResultText').textContent = JSON.stringify(data).slice(0, 600);
+      toast('测试失败', 'error');
     }
-    list.innerHTML = res.requests.map(r => `
-      <div class="log-entry">
-        <span class="log-time">${r.time}</span>
-        <span class="log-backend ${r.backend}">${r.backend}</span>
-        <span class="log-model">${r.model}${r.stream ? ' 🔄' : ''}</span>
-        <span class="log-status ${r.status}">${r.status === 'success' ? '✓' : '✗'}</span>
-      </div>
-    `).join('');
-  } catch(e) { console.error('Load logs failed:', e); }
+  } catch (e) { box.className = 'result-box show bad'; $('testResultTitle').textContent = '✕ 请求异常'; $('testResultText').textContent = String(e); }
+  finally { btn.disabled = false; btn.textContent = '▶ 一键测试'; loadLogs(); }
+}
+async function openClaudeScience() {
+  toast('正在打开 Claude Science…', 'info');
+  const res = await api('/api/open-claude-science', { method: 'POST' });
+  if (res.ok) toast('已发送打开指令', 'success'); else toast('打开失败：' + (res.error || ''), 'error');
+}
+async function patchMenu() {
+  toast('正在补丁模型菜单…', 'info');
+  const res = await api('/api/patch-model-menu', { method: 'POST' });
+  if (res.ok) toast('菜单补丁完成，重启 Claude Science 后生效', 'success'); else toast('补丁失败：' + (res.error || ''), 'error');
 }
 
-async function clearLogs() {
-  await api('/api/recent-requests', { method: 'DELETE' });
-  document.getElementById('logList').innerHTML = '<div class="log-empty">已清空</div>';
+// ════════════════════════ Advanced (config forms) ════════════════════════
+function bindConfigToForms(cfg) {
+  const set = (id, v) => { const el = $(id); if (el && el.value !== undefined) el.value = v; };
+  set('defaultBackend', cfg.default_backend || 'deepseek');
+  set('forceModel', cfg.force_model || '');
+  set('modelListMode', cfg.model_list_mode || 'aliases');
+  set('modelMenuStrategy', cfg.model_menu_strategy || 'claude_compatible');
+  set('modelAliases', JSON.stringify(cfg.model_aliases || [], null, 2));
+  set('modelTokenCaps', JSON.stringify(cfg.model_token_caps || {}, null, 2));
+  set('defaultMaxTokensCap', cfg.default_max_tokens_cap || 0);
+  set('reasoningPolicy', cfg.reasoning_content_policy || 'never');
+  set('inlineImagePolicy', cfg.inline_image_policy || 'auto');
+  set('proxyAuthMode', cfg.proxy_auth_mode || 'optional');
+  $('proxyAuthToken').placeholder = cfg.proxy_auth_token ? '已配置，输入新 token 覆盖' : '留空关闭';
+  const host = cfg.proxy_host || '127.0.0.1', port = cfg.proxy_port || 9876;
+  $('startCmdText').textContent = `export ANTHROPIC_BASE_URL="http://${host}:${port}"\nopen -a "Claude Science"`;
 }
+function parseJsonField(id, label, fb) { try { return JSON.parse($(id).value || fb); } catch (e) { toast(`${label} JSON 格式错误`, 'error'); throw e; } }
+async function saveStrategy() {
+  const res = await api('/api/config', { method: 'POST', body: JSON.stringify({ inline_image_policy: $('inlineImagePolicy').value, reasoning_content_policy: $('reasoningPolicy').value }) });
+  if (res.ok) { toast('策略已保存', 'success'); loadConfig(); } else toast('保存失败：' + (res.error || ''), 'error');
+}
+async function savePathSecret() {
+  const body = { proxy_auth_mode: $('proxyAuthMode').value };
+  const t = $('proxyAuthToken').value; if (t) body.proxy_auth_token = t;
+  const res = await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
+  if (res.ok) { toast('鉴权配置已保存', 'success'); loadConfig(); } else toast('保存失败：' + (res.error || ''), 'error');
+}
+async function saveRouting() {
+  let aliases, caps;
+  try { aliases = parseJsonField('modelAliases', '模型别名', '[]'); caps = parseJsonField('modelTokenCaps', 'max_tokens 上限', '{}'); } catch (e) { return; }
+  const res = await api('/api/config', { method: 'POST', body: JSON.stringify({
+    default_backend: $('defaultBackend').value, force_model: $('forceModel').value,
+    model_list_mode: $('modelListMode').value, model_menu_strategy: $('modelMenuStrategy').value,
+    model_aliases: aliases, model_token_caps: caps, default_max_tokens_cap: Number($('defaultMaxTokensCap').value || 0),
+  }) });
+  if (res.ok) { toast('路由规则已保存', 'success'); await loadConfig(); loadMenuModels(); } else toast('保存失败：' + (res.error || ''), 'error');
+}
+async function setGlobalEnv() { toast('正在设置全局环境变量…', 'info'); const res = await api('/api/setup-global-env', { method: 'POST' }); if (res.ok) toast('ANTHROPIC_BASE_URL 已全局设置', 'success'); else toast('设置失败，请手动执行命令', 'error'); }
+async function installService() { toast('正在安装后台服务…', 'info'); const res = await api('/api/install-service', { method: 'POST' }); if (res.ok) toast('LaunchAgent 已安装', 'success'); else toast('安装失败：' + (res.error || ''), 'error'); }
+async function refreshToken() { toast('正在刷新 OAuth Token…', 'info'); const res = await api('/api/refresh-token', { method: 'POST' }); if (res.ok) toast('OAuth Token 已刷新', 'success'); else toast('刷新失败：' + (res.error || ''), 'error'); }
+function copyStartCmd() { navigator.clipboard.writeText($('startCmdText').textContent).then(() => toast('已复制', 'success')); }
+function renderRawConfig() { $('rawConfig').textContent = JSON.stringify(currentConfig, null, 2); }
+function copyRawConfig() { navigator.clipboard.writeText(JSON.stringify(currentConfig, null, 2)).then(() => toast('已复制原始配置', 'success')); }
 
-// ── Init ──
-loadProviderPresets();
-loadProviderProfiles();
-loadConfig();
-setInterval(loadConfig, 30000); // Auto-refresh config every 30s
+// ════════════════════════ Logs ════════════════════════
+async function loadLogs() { try { logsCache = (await api('/api/recent-requests')).requests || []; renderLogs(); } catch (e) {} }
+function renderLogs() {
+  const rows = logsCache;
+  const ok = rows.filter(r => r.status === 'success').length;
+  $('logTotal').textContent = rows.length; $('logOk').textContent = ok; $('logErr').textContent = rows.length - ok;
+  const b = $('navLogBadge'); if (b) b.textContent = rows.length;
+  const last = rows[0];
+  if (last) { $('sbReqDot').className = 'dot ' + (last.status === 'success' ? 'on' : 'off'); $('sbReq').textContent = `${last.status === 'success' ? '成功' : '失败'} · ${last.time}`; }
+  else { $('sbReqDot').className = 'dot'; $('sbReq').textContent = '暂无'; }
+  const err = rows.find(r => r.status !== 'success');
+  if (err) { $('lastErrPanel').style.display = 'block'; $('lastErrText').textContent = `${err.time} · ${err.backend} · ${err.model} · 请求失败（详见 proxy 日志）`; }
+  else $('lastErrPanel').style.display = 'none';
+  $('logBody').innerHTML = rows.length
+    ? rows.map(r => `<tr class="log-row ${r.status !== 'success' ? 'is-error' : ''}"><td class="mono" style="color:var(--text-dim)">${escapeHtml(r.time)}</td><td><span class="tag">${escapeHtml(r.backend)}</span></td><td class="mono cell-clip">${escapeHtml(r.model)}</td><td>${r.stream ? '⇄' : '—'}</td><td class="st-${r.status === 'success' ? 'success' : 'error'}">${r.status === 'success' ? '✓ 成功' : '✕ 失败'}</td></tr>`).join('')
+    : '<tr><td colspan="5" class="empty">暂无请求记录</td></tr>';
+}
+async function clearLogs() { await api('/api/recent-requests', { method: 'DELETE' }); logsCache = []; renderLogs(); toast('日志已清空', 'success'); }
+
+// ════════════════════════ Init ════════════════════════
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeProviderModal(); });
+renderNav();
+refreshAll();
+loadUpdateInfo(false);
+loadUpdateInstallState();
+setInterval(() => { loadHealth(); loadLogs(); }, 15000);
+setInterval(() => loadUpdateInfo(false), 6 * 60 * 60 * 1000);
 </script>
 </body>
 </html>

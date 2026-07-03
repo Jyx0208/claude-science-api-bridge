@@ -45,7 +45,7 @@ assert data["default_backend"] == "custom", data
 assert data["custom_base_url"] == "https://api.siliconflow.cn", data
 assert data["custom_upstream_mode"] == "openai", data
 assert data["force_model"] == "Pro/moonshotai/Kimi-K2.6", data
-assert data["model_aliases"][0]["display_name"] == "Kimi K2.6 Pro++", data
+assert data["model_aliases"][0]["display_name"] == "Kimi K2.6 Pro++ (Vision)", data
 assert data["custom_api_key"] == "test-release-key", data
 
 for rel in [

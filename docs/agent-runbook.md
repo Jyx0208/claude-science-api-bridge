@@ -1,6 +1,6 @@
 # Agent Runbook
 
-This is the main step-by-step guide for an AI agent configuring this project on a user's Mac.
+This is the main step-by-step guide for an AI agent configuring this project on a user's Mac or Linux machine.
 默认按安全模式执行；不要修改 Clash、VPN、TUN、DNS、系统代理、`/etc/hosts`、系统证书信任或 443 端口。
 
 ## Phase 0: Safety Check
@@ -14,6 +14,7 @@ Run only read-only checks first:
 Inspect:
 
 - macOS version
+- Linux distribution if not macOS
 - Python path and version
 - whether Claude Science is installed
 - whether `~/.claude-science/encryption.key` exists
@@ -35,14 +36,15 @@ This should:
 
 1. Install Python dependencies.
 2. Create `config.json` from `config.example.json` if missing.
-3. Generate a fake OAuth token with `setup-token.py`.
-4. Patch the local daemon copy for OAuth/profile calls when possible.
-5. Patch the local daemon model menu so Claude Science can show BYOK model names.
-6. Set `ANTHROPIC_BASE_URL=http://127.0.0.1:9876` via `launchctl`.
-7. Install and start a user LaunchAgent for `proxy.py`.
+3. Generate a fake OAuth token with `setup-token.py` when Claude Science local state exists.
+4. On macOS, patch the local daemon copy for OAuth/profile calls when possible.
+5. On macOS, patch the local daemon model menu so Claude Science can show BYOK model names.
+6. On macOS, set `ANTHROPIC_BASE_URL=http://127.0.0.1:9876` via `launchctl` and install a user LaunchAgent.
+7. On Linux, install `claude-science-api-bridge.service` as a systemd user service, or use a fallback user background process when systemd user is unavailable.
 
 The script prefers a project-local `.venv` so it does not depend on global Python packages.
 If `~/.claude-science/encryption.key` does not exist yet, it may open Claude Science once so the app can create local state.
+On Linux, Claude Science desktop startup and daemon patches are skipped because the app is macOS-only; use `ANTHROPIC_BASE_URL` with compatible clients. See `docs/linux.md`.
 
 ## Phase 2: Configure Provider
 
@@ -112,7 +114,7 @@ For SiliconFlow Kimi:
   "model_aliases": [
     {
       "id": "claude-opus-4-8",
-      "display_name": "Kimi K2.6 Pro++",
+      "display_name": "Kimi K2.6 Pro++ (Vision)",
       "backend": "custom",
       "model": "Pro/moonshotai/Kimi-K2.6"
     }
@@ -279,7 +281,7 @@ To remove safe-mode installation:
 ./scripts/uninstall.sh
 ```
 
-This removes the user LaunchAgent and launchctl environment variables. It does not delete API keys unless the user asks.
+This removes the user LaunchAgent/launchctl state on macOS, or the systemd user service/fallback process on Linux. It does not delete API keys unless the user asks.
 
 ## Phase 7: Before Publishing
 
@@ -302,3 +304,4 @@ Confirm ignored local files are not staged:
 - `dist/` release artifacts
 
 The macOS release package is documented in `docs/release-packaging.md`.
+Linux support is documented in `docs/linux.md`.

@@ -5,10 +5,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 LABEL="com.byok.claude-science-proxy"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+SYSTEMD_SERVICE_NAME="claude-science-api-bridge.service"
+SYSTEMD_SERVICE="$HOME/.config/systemd/user/$SYSTEMD_SERVICE_NAME"
+PID_FILE="$HOME/.claude-science/proxy.pid"
 PROXY_HOST="${PROXY_HOST:-127.0.0.1}"
 PROXY_PORT="${PROXY_PORT:-9876}"
 PROXY_URL="http://$PROXY_HOST:$PROXY_PORT"
 DISPLAY_PROXY_URL="$PROXY_URL"
+OS_NAME="$(uname -s)"
+
+is_macos() {
+  [ "$OS_NAME" = "Darwin" ]
+}
+
+is_linux() {
+  [ "$OS_NAME" = "Linux" ]
+}
 
 find_python() {
   if [ -n "${PYTHON:-}" ] && [ -x "$PYTHON" ]; then
@@ -30,7 +42,13 @@ BOOTSTRAP_PYTHON="$(find_python)" || {
 }
 VENV_DIR="${VENV_DIR:-$PROJECT_DIR/.venv}"
 
-mkdir -p "$HOME/.claude-science/logs" "$HOME/Library/LaunchAgents"
+mkdir -p "$HOME/.claude-science/logs"
+if is_macos; then
+  mkdir -p "$HOME/Library/LaunchAgents"
+fi
+if is_linux; then
+  mkdir -p "$HOME/.config/systemd/user"
+fi
 
 echo "Using bootstrap Python: $BOOTSTRAP_PYTHON"
 if [ "${USE_SYSTEM_PYTHON:-0}" = "1" ]; then
@@ -128,7 +146,7 @@ if [ -f "$HOME/.claude-science/encryption.key" ]; then
   "$PYTHON_BIN" "$PROJECT_DIR/setup-token.py"
 else
   echo "Warning: ~/.claude-science/encryption.key does not exist yet."
-  if [ -d "/Applications/Claude Science.app" ]; then
+  if is_macos && [ -d "/Applications/Claude Science.app" ]; then
     echo "Opening Claude Science once to let it create local state..."
     open -a "Claude Science" >/dev/null 2>&1 || true
     sleep 8
@@ -137,31 +155,40 @@ else
     "$PYTHON_BIN" "$PROJECT_DIR/setup-token.py"
   else
     echo "OAuth token was not generated because encryption.key is still missing."
-    echo "Agent action: open Claude Science once, wait for local files, then rerun ./scripts/install-safe.sh."
+    if is_macos; then
+      echo "Agent action: open Claude Science once, wait for local files, then rerun ./scripts/install-safe.sh."
+    else
+      echo "Linux note: OAuth token generation is skipped unless a compatible client creates ~/.claude-science/encryption.key."
+    fi
   fi
 fi
 
-if [ "${DISABLE_DAEMON_AUTH_PATCH:-0}" != "1" ]; then
+if is_macos && [ "${DISABLE_DAEMON_AUTH_PATCH:-0}" != "1" ]; then
   PYTHON="$PYTHON_BIN" PROXY_PORT="$PROXY_PORT" "$PROJECT_DIR/scripts/patch-daemon-auth.sh" || {
     echo "Warning: Claude Science daemon auth patch was not applied."
     echo "Agent action: if Claude Science still shows logged-out, inspect docs/troubleshooting.md before changing network settings."
   }
-else
+elif is_macos; then
   echo "Daemon auth binary patch is disabled by DISABLE_DAEMON_AUTH_PATCH=1."
+else
+  echo "Skipping Claude Science daemon auth patch: Linux safe mode has no macOS daemon copy."
 fi
 
-if [ "${DISABLE_DAEMON_MODEL_PATCH:-0}" != "1" ]; then
+if is_macos && [ "${DISABLE_DAEMON_MODEL_PATCH:-0}" != "1" ]; then
   PYTHON="$PYTHON_BIN" "$PROJECT_DIR/scripts/patch-daemon-models.sh" || {
     echo "Warning: Claude Science daemon model menu patch was not applied."
     echo "Agent action: Claude Science may still show Claude model names; inspect docs/troubleshooting.md."
   }
-else
+elif is_macos; then
   echo "Daemon model menu patch is disabled by DISABLE_DAEMON_MODEL_PATCH=1."
+else
+  echo "Skipping Claude Science daemon model patch: Linux safe mode has no macOS daemon copy."
 fi
 
-launchctl setenv ANTHROPIC_BASE_URL "$PROXY_URL"
+install_macos_service() {
+  launchctl setenv ANTHROPIC_BASE_URL "$PROXY_URL"
 
-cat > "$PLIST" <<PLIST
+  cat > "$PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -198,13 +225,74 @@ cat > "$PLIST" <<PLIST
 </plist>
 PLIST
 
-launchctl bootout "gui/$(id -u)" "$PLIST" >/dev/null 2>&1 || true
-launchctl bootstrap "gui/$(id -u)" "$PLIST" >/dev/null 2>&1 || launchctl load "$PLIST"
-launchctl kickstart -k "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
+  launchctl bootout "gui/$(id -u)" "$PLIST" >/dev/null 2>&1 || true
+  launchctl bootstrap "gui/$(id -u)" "$PLIST" >/dev/null 2>&1 || launchctl load "$PLIST"
+  launchctl kickstart -k "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
+}
+
+install_linux_systemd_service() {
+  cat > "$SYSTEMD_SERVICE" <<SERVICE
+[Unit]
+Description=Claude Science API Bridge
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$PROJECT_DIR
+ExecStart=$PYTHON_BIN $PROJECT_DIR/proxy.py
+Restart=always
+RestartSec=3
+Environment=ANTHROPIC_BASE_URL=$PROXY_URL
+Environment=PROXY_HOST=$PROXY_HOST
+Environment=PROXY_PORT=$PROXY_PORT
+Environment=PATH=$(dirname "$PYTHON_BIN"):/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target
+SERVICE
+
+  systemctl --user daemon-reload
+  systemctl --user enable --now "$SYSTEMD_SERVICE_NAME"
+}
+
+start_linux_fallback_service() {
+  if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" >/dev/null 2>&1; then
+    echo "Fallback proxy process is already running: $(cat "$PID_FILE")"
+    return 0
+  fi
+  (
+    cd "$PROJECT_DIR"
+    ANTHROPIC_BASE_URL="$PROXY_URL" \
+    PROXY_HOST="$PROXY_HOST" \
+    PROXY_PORT="$PROXY_PORT" \
+    PATH="$(dirname "$PYTHON_BIN"):/usr/local/bin:/usr/bin:/bin" \
+    nohup "$PYTHON_BIN" "$PROJECT_DIR/proxy.py" >>"$HOME/.claude-science/logs/proxy.log" 2>>"$HOME/.claude-science/logs/proxy-error.log" &
+    echo $! > "$PID_FILE"
+  )
+  echo "Started fallback proxy process: $(cat "$PID_FILE")"
+}
+
+if is_macos; then
+  install_macos_service
+elif is_linux; then
+  if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+    install_linux_systemd_service
+  else
+    echo "systemd --user is unavailable; starting a per-user fallback background process."
+    start_linux_fallback_service
+  fi
+else
+  echo "Unsupported OS for service installation: $OS_NAME"
+  echo "Start manually with: ANTHROPIC_BASE_URL=\"$DISPLAY_PROXY_URL\" $PYTHON_BIN \"$PROJECT_DIR/proxy.py\""
+fi
 
 sleep 2
 curl -fsS "$PROXY_URL/health"
 printf '\n'
 echo "Safe install complete."
 echo "Dashboard: http://$PROXY_HOST:$PROXY_PORT/dashboard"
-echo "Start Claude Science with: $PROJECT_DIR/scripts/start-claude-science.sh"
+if is_macos; then
+  echo "Start Claude Science with: $PROJECT_DIR/scripts/start-claude-science.sh"
+else
+  echo "Use with compatible clients: export ANTHROPIC_BASE_URL=$DISPLAY_PROXY_URL"
+fi

@@ -134,7 +134,7 @@ PY
       model="Pro/moonshotai/Kimi-K2.6"
       mode="openai"
       inline_policy="preserve"
-      display_name="Kimi K2.6 Pro++"
+      display_name="Kimi K2.6 Pro++ (Vision)"
       ;;
     "DeepSeek")
       backend="deepseek"

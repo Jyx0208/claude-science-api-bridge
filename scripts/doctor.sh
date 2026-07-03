@@ -4,7 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 LABEL="com.byok.claude-science-proxy"
+SYSTEMD_SERVICE_NAME="claude-science-api-bridge.service"
+PID_FILE="$HOME/.claude-science/proxy.pid"
 PORT="${PROXY_PORT:-9876}"
+OS_NAME="$(uname -s)"
 
 section() {
   printf '\n== %s ==\n' "$1"
@@ -15,7 +18,14 @@ exists() {
 }
 
 section "System"
-sw_vers 2>/dev/null || true
+if [ "$OS_NAME" = "Darwin" ]; then
+  sw_vers 2>/dev/null || true
+else
+  uname -a
+  if [ -f /etc/os-release ]; then
+    sed -n 's/^PRETTY_NAME=//p' /etc/os-release | tr -d '"'
+  fi
+fi
 printf 'User: %s\n' "$(id -un)"
 printf 'Project: %s\n' "$PROJECT_DIR"
 
@@ -28,24 +38,47 @@ else
 fi
 
 section "Claude Science"
-if [ -d "/Applications/Claude Science.app" ]; then
-  printf 'App: installed\n'
+if [ "$OS_NAME" = "Darwin" ]; then
+  if [ -d "/Applications/Claude Science.app" ]; then
+    printf 'App: installed\n'
+  else
+    printf 'App: not found at /Applications/Claude Science.app\n'
+  fi
+  ps aux | grep -E 'ClaudeScience|claude-science serve' | grep -v grep || true
+  if exists lsof; then
+    lsof -nP -iTCP:8765 -sTCP:LISTEN 2>/dev/null || true
+  fi
 else
-  printf 'App: not found at /Applications/Claude Science.app\n'
+  printf 'Desktop app: macOS-only; Linux support covers proxy/Dashboard and compatible clients.\n'
 fi
-ps aux | grep -E 'ClaudeScience|claude-science serve' | grep -v grep || true
-lsof -nP -iTCP:8765 -sTCP:LISTEN 2>/dev/null || true
 
-section "Launchctl Environment"
-printf 'ANTHROPIC_BASE_URL=%s\n' "$(launchctl getenv ANTHROPIC_BASE_URL || true)"
-printf 'NODE_EXTRA_CA_CERTS=%s\n' "$(launchctl getenv NODE_EXTRA_CA_CERTS || true)"
-printf 'SSL_CERT_FILE=%s\n' "$(launchctl getenv SSL_CERT_FILE || true)"
+section "User Environment"
+if [ "$OS_NAME" = "Darwin" ]; then
+  printf 'ANTHROPIC_BASE_URL=%s\n' "$(launchctl getenv ANTHROPIC_BASE_URL || true)"
+  printf 'NODE_EXTRA_CA_CERTS=%s\n' "$(launchctl getenv NODE_EXTRA_CA_CERTS || true)"
+  printf 'SSL_CERT_FILE=%s\n' "$(launchctl getenv SSL_CERT_FILE || true)"
+elif exists systemctl && systemctl --user show-environment >/dev/null 2>&1; then
+  systemctl --user show-environment | grep -E '^(ANTHROPIC_BASE_URL|NODE_EXTRA_CA_CERTS|SSL_CERT_FILE)=' || true
+else
+  printf 'systemd --user environment unavailable\n'
+fi
 
 section "Proxy Service"
-launchctl print "gui/$(id -u)/$LABEL" 2>/dev/null | grep -E 'state =|pid =|path =|program =|last exit code' || true
-lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true
-lsof -nP -iTCP:9877 -sTCP:LISTEN 2>/dev/null || true
-lsof -nP -iTCP:443 -sTCP:LISTEN 2>/dev/null || true
+if [ "$OS_NAME" = "Darwin" ]; then
+  launchctl print "gui/$(id -u)/$LABEL" 2>/dev/null | grep -E 'state =|pid =|path =|program =|last exit code' || true
+elif exists systemctl; then
+  systemctl --user status "$SYSTEMD_SERVICE_NAME" --no-pager 2>/dev/null | sed -n '1,18p' || true
+  if [ -f "$PID_FILE" ]; then
+    printf 'Fallback PID: %s\n' "$(cat "$PID_FILE" 2>/dev/null || true)"
+  fi
+fi
+if exists lsof; then
+  lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true
+  lsof -nP -iTCP:9877 -sTCP:LISTEN 2>/dev/null || true
+  lsof -nP -iTCP:443 -sTCP:LISTEN 2>/dev/null || true
+elif exists ss; then
+  ss -ltnp 2>/dev/null | grep -E ":($PORT|9877|443)\\b" || true
+fi
 
 section "Files"
 for path in \
@@ -102,3 +135,6 @@ printf '\n'
 section "Recent Logs"
 tail -n 40 "$HOME/.claude-science/logs/proxy.log" 2>/dev/null || true
 tail -n 40 "$HOME/.claude-science/logs/proxy-error.log" 2>/dev/null || true
+if [ "$OS_NAME" = "Linux" ] && exists journalctl; then
+  journalctl --user -u "$SYSTEMD_SERVICE_NAME" -n 40 --no-pager 2>/dev/null || true
+fi

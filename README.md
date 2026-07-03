@@ -17,6 +17,7 @@ curl -fsSL https://raw.githubusercontent.com/Jyx0208/claude-science-api-bridge/m
 ## 功能
 
 - 提供 macOS `.app + .dmg` 一键安装包，首次打开即可选择 provider 并写入本地配置
+- 提供 Linux 安全安装路径：systemd user service 优先，fallback 用户后台进程兜底
 - 在本机启动 Anthropic 兼容接口：`http://127.0.0.1:9876`
 - 将 Claude Science 的 Anthropic Messages API 请求转换为 OpenAI Chat Completions 请求
 - 将 DeepSeek、OpenAI 或其他 OpenAI 兼容接口的响应转换回 Anthropic 格式
@@ -32,6 +33,7 @@ curl -fsSL https://raw.githubusercontent.com/Jyx0208/claude-science-api-bridge/m
 - 支持可选 path-secret 本地鉴权，避免本机其他进程随便调用你的第三方 key
 - 支持按模型配置 `max_tokens` 上限，减少第三方 provider 因输出上限报 400
 - 提供 Web 管理面板：`http://127.0.0.1:9876/dashboard`
+- 支持从 GitHub Latest Release 检查新版，并在 Dashboard 一键下载、安装和重新打开 App
 - 支持 macOS LaunchAgent 后台运行和开机自启
 - 提供 agent runbook，方便 AI agent 在用户电脑上安全接管配置
 
@@ -52,6 +54,8 @@ curl -fsSL https://raw.githubusercontent.com/Jyx0208/claude-science-api-bridge/m
 
 ## 用户怎么使用
 
+### macOS 一键安装
+
 也可以手动下载 macOS 发布包：
 
 1. 下载 `Claude Science API Bridge.dmg`
@@ -62,6 +66,24 @@ curl -fsSL https://raw.githubusercontent.com/Jyx0208/claude-science-api-bridge/m
 如果首次打开被 macOS 拦截，请优先使用上面的一行安装命令，或者在 Finder 里右键 App，选择“打开”。
 
 当前公开 DMG 使用 ad-hoc 签名，未经过 Apple Developer ID 公证，所以 macOS 可能显示“Apple 无法验证是否包含恶意软件”。这不是检测到恶意软件，而是 Apple 没有给这个包签发公证票据。临时使用可右键打开；正式发布给更多用户前，应使用 `./scripts/notarize-macos-release.sh` 做 Developer ID 签名和 Apple notarization。
+
+### Linux 安全安装
+
+Linux 目前支持本地代理、Dashboard、配置管理和 OpenAI 兼容第三方 API 转换。Claude Science 桌面应用本身仍是 macOS 应用，所以 Linux 不会启动 Claude Science，也不会执行 macOS daemon patch。
+
+```bash
+git clone https://github.com/Jyx0208/claude-science-api-bridge.git
+cd claude-science-api-bridge
+./scripts/install-safe.sh
+```
+
+安装脚本会优先创建 `systemd --user` 服务 `claude-science-api-bridge.service`；如果 systemd user 不可用，会退回到当前用户后台进程。兼容客户端使用：
+
+```bash
+export ANTHROPIC_BASE_URL="http://127.0.0.1:9876"
+```
+
+详细说明见 `docs/linux.md`。
 
 Agent 安装方式也仍然支持。推荐做法是：把下面这段 prompt 复制给你的本地 agent，让 agent 阅读仓库、诊断环境、安装、配置并验证。
 
@@ -220,7 +242,7 @@ https://github.com/Jyx0208/claude-science-api-bridge
   "model_aliases": [
     {
       "id": "claude-opus-4-8",
-      "display_name": "Kimi K2.6 Pro++",
+      "display_name": "Kimi K2.6 Pro++ (Vision)",
       "backend": "custom",
       "model": "Pro/moonshotai/Kimi-K2.6"
     }
@@ -313,7 +335,7 @@ Claude Science 的模型选择界面有一部分来自本地 daemon 的硬编码
   "model_aliases": [
     {
       "id": "claude-opus-4-8",
-      "display_name": "Kimi K2.6 Pro++",
+      "display_name": "Kimi K2.6 Pro++ (Vision)",
       "backend": "custom",
       "model": "Pro/moonshotai/Kimi-K2.6"
     }
@@ -334,7 +356,7 @@ Claude Science 发出的 Anthropic 图片 block 会被代理转换成 OpenAI 兼
 `inline_image_policy` 支持：
 
 - `auto`：默认策略。DeepSeek 这类文本后端会省略图片；Custom/OpenAI 后端会保留图片。
-- `preserve`：始终把图片发送给后端。适合 Kimi、GPT-4o、Qwen-VL 等视觉模型。
+- `preserve`：始终把图片发送给后端。适合 Kimi K2.6、GPT-4o、Qwen3-VL 等视觉模型。
 - `omit`：始终省略图片。适合只想跑文本的便宜模型。
 - `omit_inline`：只省略 base64 内联图片，保留外部图片 URL。
 
@@ -380,9 +402,12 @@ curl -sS http://127.0.0.1:9876/api/recent-requests
 维护者或 agent 可以在 macOS 上生成 `.app` 和 `.dmg`：
 
 ```bash
+printf '0.2.6\n' > VERSION
 ./scripts/build-macos-release.sh
 ./scripts/smoke-test-release-package.sh
 ```
+
+Dashboard 会通过 GitHub Latest Release 检查是否有新版本。发布新版时请先更新 `VERSION`，再创建 GitHub Release 并上传 DMG；用户安装后的本地面板会在检测到更新时显示提醒，并可直接点“一键更新”自动下载 DMG、复制到 `~/Applications`、重新打开 App。
 
 如果有 Apple Developer ID 证书和 notarytool 凭证，可生成已公证 DMG：
 
@@ -430,6 +455,7 @@ dist/Claude Science API Bridge.dmg
 │   ├── github-publishing.md
 │   ├── network-interception.md
 │   ├── release-packaging.md
+│   ├── linux.md
 │   └── troubleshooting.md
 ├── packaging/
 │   └── macos/

@@ -17,6 +17,17 @@ Restart:
 launchctl kickstart -k gui/$(id -u)/com.byok.claude-science-proxy
 ```
 
+On Linux, check and restart the user service:
+
+```bash
+./scripts/doctor.sh
+systemctl --user status claude-science-api-bridge.service
+systemctl --user restart claude-science-api-bridge.service
+journalctl --user -u claude-science-api-bridge.service -n 120 --no-pager
+```
+
+If systemd user is unavailable, `scripts/install-safe.sh` starts a fallback user process and writes its PID to `~/.claude-science/proxy.pid`.
+
 ## Backend 400: Invalid Tool Schema
 
 The proxy sanitizes Claude tool schemas before sending them to OpenAI-compatible APIs. If this still appears, capture only the backend error text from `proxy.log`. Do not log full prompts or API keys.

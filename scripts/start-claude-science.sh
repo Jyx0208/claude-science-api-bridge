@@ -6,6 +6,7 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PYTHON_BIN="${PYTHON:-python3}"
 PROXY_PORT="${PROXY_PORT:-9876}"
 PROXY_URL="${ANTHROPIC_BASE_URL:-http://127.0.0.1:$PROXY_PORT}"
+OS_NAME="$(uname -s)"
 
 if [ -f "$PROJECT_DIR/config.json" ] && [ -z "${ANTHROPIC_BASE_URL:-}" ]; then
   PROXY_URL="$("$PYTHON_BIN" - "$PROJECT_DIR/config.json" "$PROXY_PORT" <<'PY'
@@ -26,6 +27,14 @@ PY
 )"
 fi
 DISPLAY_PROXY_URL="$(printf '%s' "$PROXY_URL" | sed -E 's#(://[^/]+/).+#\1****#')"
+
+if [ "$OS_NAME" != "Darwin" ]; then
+  echo "Claude Science desktop startup is macOS-only."
+  echo "Linux support covers the local proxy, Dashboard, and compatible clients."
+  echo "Run ./scripts/install-safe.sh to install/start the proxy service."
+  echo "Use with compatible clients: export ANTHROPIC_BASE_URL=$DISPLAY_PROXY_URL"
+  exit 0
+fi
 
 if [ -f "$HOME/.claude-science/encryption.key" ]; then
   "$PYTHON_BIN" "$PROJECT_DIR/setup-token.py" >/dev/null

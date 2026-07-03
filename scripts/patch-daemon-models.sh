@@ -247,6 +247,14 @@ missing = []
 for slot_no, kind, candidates, new_value in patches:
     if not any(data.count(candidate.encode("ascii")) for candidate in candidates):
         missing.append(f"slot {slot_no} {kind}: {' / '.join(candidates)}")
+if missing and backup.exists():
+    print("Current daemon strings do not match patch state; restoring model backup before patch.")
+    shutil.copy2(backup, target)
+    data = target.read_bytes()
+    missing = []
+    for slot_no, kind, candidates, new_value in patches:
+        if not any(data.count(candidate.encode("ascii")) for candidate in candidates):
+            missing.append(f"slot {slot_no} {kind}: {' / '.join(candidates)}")
 if missing:
     raise SystemExit(
         "Unsupported Claude Science daemon build; expected model string(s) not found:\n"

@@ -26,6 +26,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -45,8 +46,26 @@ APP_DIR = Path(__file__).resolve().parent
 PROXY_DIR = Path(os.environ.get("CLAUDE_SCIENCE_PROXY_DIR", str(APP_DIR))).expanduser()
 CONFIG_FILE = PROXY_DIR / "config.json"
 STATIC_DIR = PROXY_DIR / "static"
+VERSION_FILE = PROXY_DIR / "VERSION"
 TOKEN_DIR = Path.home() / ".claude-science" / ".oauth-tokens"
 ENC_KEY_FILE = Path.home() / ".claude-science" / "encryption.key"
+GITHUB_REPO = os.environ.get("BRIDGE_GITHUB_REPO", "Jyx0208/claude-science-api-bridge")
+GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
+GITHUB_LATEST_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+UPDATE_CACHE_TTL_SECONDS = int(os.environ.get("BRIDGE_UPDATE_CACHE_SECONDS", "21600"))
+
+
+def read_app_version() -> str:
+    env_version = os.environ.get("BRIDGE_VERSION", "").strip()
+    if env_version:
+        return env_version.lstrip("vV")
+    try:
+        return VERSION_FILE.read_text().strip().lstrip("vV") or "0.0.0"
+    except Exception:
+        return "0.0.0"
+
+
+APP_VERSION = read_app_version()
 
 
 # ---------------------------------------------------------------------------
@@ -397,58 +416,312 @@ def mask_proxy_url(url: str) -> str:
     return re.sub(r"(://[^/]+/).+", r"\1****", url)
 
 
+def normalize_version_tag(version: str) -> str:
+    return str(version or "").strip().lstrip("vV")
+
+
+def parse_version_tuple(version: str) -> tuple[int, ...]:
+    core = normalize_version_tag(version).split("-", 1)[0].split("+", 1)[0]
+    numbers = [int(part) for part in re.findall(r"\d+", core)]
+    return tuple((numbers + [0, 0, 0])[:3])
+
+
+def is_newer_version(latest: str, current: str) -> bool:
+    return parse_version_tuple(latest) > parse_version_tuple(current)
+
+
+def build_update_info(release: dict, current_version: str = APP_VERSION) -> dict:
+    release = release if isinstance(release, dict) else {}
+    latest_tag = str(release.get("tag_name") or release.get("name") or "").strip()
+    latest_version = normalize_version_tag(latest_tag)
+    assets = release.get("assets") if isinstance(release.get("assets"), list) else []
+    public_assets = [
+        {
+            "name": str(asset.get("name") or ""),
+            "browser_download_url": str(asset.get("browser_download_url") or ""),
+            "size": asset.get("size") if isinstance(asset.get("size"), int) else None,
+        }
+        for asset in assets if isinstance(asset, dict)
+    ]
+    dmg_asset = next(
+        (asset for asset in public_assets if asset["name"].lower().endswith(".dmg")),
+        None,
+    )
+    html_url = str(release.get("html_url") or GITHUB_RELEASES_URL)
+    return {
+        "ok": True,
+        "repo": GITHUB_REPO,
+        "current_version": normalize_version_tag(current_version),
+        "latest_version": latest_version or normalize_version_tag(current_version),
+        "latest_tag": latest_tag or f"v{normalize_version_tag(current_version)}",
+        "update_available": bool(latest_version and is_newer_version(latest_version, current_version)),
+        "html_url": html_url,
+        "release_notes_url": html_url,
+        "download_url": (dmg_asset or {}).get("browser_download_url") or GITHUB_RELEASES_URL,
+        "assets": public_assets,
+        "install_command": f"curl -fsSL https://raw.githubusercontent.com/{GITHUB_REPO}/main/scripts/install-macos-app.sh | bash",
+        "published_at": str(release.get("published_at") or ""),
+    }
+
+
+def build_update_info_from_release_url(url: str, current_version: str = APP_VERSION) -> dict:
+    match = re.search(r"/releases/tag/([^/?#]+)", str(url or ""))
+    if not match:
+        return {
+            "ok": False,
+            "repo": GITHUB_REPO,
+            "current_version": normalize_version_tag(current_version),
+            "latest_version": normalize_version_tag(current_version),
+            "latest_tag": f"v{normalize_version_tag(current_version)}",
+            "update_available": False,
+            "html_url": GITHUB_RELEASES_URL,
+            "release_notes_url": GITHUB_RELEASES_URL,
+            "download_url": GITHUB_RELEASES_URL,
+            "assets": [],
+            "install_command": f"curl -fsSL https://raw.githubusercontent.com/{GITHUB_REPO}/main/scripts/install-macos-app.sh | bash",
+            "published_at": "",
+        }
+    latest_tag = match.group(1) if match else ""
+    return build_update_info({
+        "tag_name": latest_tag,
+        "html_url": str(url or GITHUB_RELEASES_URL),
+        "assets": [],
+    }, current_version)
+
+
+UPDATE_INSTALL_LOG_LIMIT = 120
+UPDATE_INSTALL_STATE = {
+    "running": False,
+    "status": "idle",
+    "phase": "",
+    "message": "",
+    "current_version": APP_VERSION,
+    "target_version": "",
+    "latest_tag": "",
+    "download_url": "",
+    "started_at": "",
+    "finished_at": "",
+    "returncode": None,
+    "log": [],
+}
+UPDATE_INSTALL_LOCK = threading.Lock()
+
+
+def github_latest_dmg_url() -> str:
+    return f"https://github.com/{GITHUB_REPO}/releases/latest/download/Claude.Science.API.Bridge.dmg"
+
+
+def choose_update_dmg_url(update_info: dict) -> str:
+    direct_url = str((update_info or {}).get("download_url") or "")
+    if direct_url.lower().split("?", 1)[0].endswith(".dmg"):
+        return direct_url
+    for asset in (update_info or {}).get("assets") or []:
+        if not isinstance(asset, dict):
+            continue
+        url = str(asset.get("browser_download_url") or "")
+        if url.lower().split("?", 1)[0].endswith(".dmg"):
+            return url
+    return github_latest_dmg_url()
+
+
+def update_installer_env(update_info: dict) -> dict:
+    return {
+        "DMG_URL": choose_update_dmg_url(update_info),
+        "INSTALL_DIR": str(Path.home() / "Applications"),
+        "BRIDGE_AUTO_UPDATE": "1",
+    }
+
+
+def update_installer_state() -> dict:
+    with UPDATE_INSTALL_LOCK:
+        data = dict(UPDATE_INSTALL_STATE)
+        data["log"] = list(UPDATE_INSTALL_STATE.get("log") or [])
+        return data
+
+
+def _set_update_installer_state(**fields):
+    with UPDATE_INSTALL_LOCK:
+        UPDATE_INSTALL_STATE.update(fields)
+
+
+def _append_update_installer_log(line: str):
+    text = str(line or "").rstrip()
+    if not text:
+        return
+    with UPDATE_INSTALL_LOCK:
+        log = list(UPDATE_INSTALL_STATE.get("log") or [])
+        log.append(text)
+        UPDATE_INSTALL_STATE["log"] = log[-UPDATE_INSTALL_LOG_LIMIT:]
+
+
+def _phase_from_installer_line(line: str) -> str:
+    lower = line.lower()
+    if "downloading" in lower:
+        return "downloading"
+    if "mounting" in lower:
+        return "mounting"
+    if "installing" in lower:
+        return "installing"
+    if "removing quarantine" in lower:
+        return "finalizing"
+    if "opening app" in lower or "done" in lower:
+        return "restarting"
+    return ""
+
+
+def run_update_installer(update_info: dict):
+    script = PROXY_DIR / "scripts" / "install-macos-app.sh"
+    target_version = normalize_version_tag((update_info or {}).get("latest_version") or "")
+    latest_tag = str((update_info or {}).get("latest_tag") or (f"v{target_version}" if target_version else ""))
+    env_overrides = update_installer_env(update_info or {})
+    _set_update_installer_state(
+        running=True,
+        status="running",
+        phase="starting",
+        message="正在启动更新安装器...",
+        current_version=APP_VERSION,
+        target_version=target_version,
+        latest_tag=latest_tag,
+        download_url=env_overrides["DMG_URL"],
+        started_at=datetime.now().isoformat(timespec="seconds"),
+        finished_at="",
+        returncode=None,
+        log=[],
+    )
+    if not script.exists():
+        _set_update_installer_state(
+            running=False,
+            status="failed",
+            phase="",
+            message=f"找不到安装脚本：{script}",
+            finished_at=datetime.now().isoformat(timespec="seconds"),
+            returncode=127,
+        )
+        return
+
+    env = os.environ.copy()
+    env.update(env_overrides)
+    try:
+        process = subprocess.Popen(
+            ["bash", str(script)],
+            cwd=str(PROXY_DIR),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        if process.stdout:
+            for line in process.stdout:
+                _append_update_installer_log(line)
+                phase = _phase_from_installer_line(line)
+                if phase:
+                    _set_update_installer_state(phase=phase, message=line.strip())
+        returncode = process.wait()
+        if returncode == 0:
+            _set_update_installer_state(
+                running=False,
+                status="succeeded",
+                phase="done",
+                message="更新安装完成。App 已重新打开；若面板仍显示旧版本，请刷新页面。",
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                returncode=returncode,
+            )
+        else:
+            _set_update_installer_state(
+                running=False,
+                status="failed",
+                phase="",
+                message=f"更新安装器退出码 {returncode}",
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                returncode=returncode,
+            )
+    except Exception as e:
+        _append_update_installer_log(str(e))
+        _set_update_installer_state(
+            running=False,
+            status="failed",
+            phase="",
+            message=str(e),
+            finished_at=datetime.now().isoformat(timespec="seconds"),
+            returncode=1,
+        )
+
+
+# Curated set of well-known providers. Each preset declares an inline_image_policy
+# that matches its default model's capability, so text-only models never 400 on
+# image input, while current multimodal models keep images.
 PROVIDER_PRESETS = {
-    "deepseek_openai": {
-        "label": "DeepSeek OpenAI-compatible",
-        "backend": "deepseek",
-        "base_url": "https://api.deepseek.com",
-        "upstream_mode": "openai",
-        "default_model": "deepseek-chat",
-        "model_aliases": [
-            {"id": "claude-opus-4-8", "display_name": "DeepSeek Chat", "backend": "deepseek", "model": "deepseek-chat"},
-            {"id": "claude-sonnet-5", "display_name": "DeepSeek Reason", "backend": "deepseek", "model": "deepseek-reasoner"},
-        ],
-    },
-    "deepseek_anthropic": {
-        "label": "DeepSeek native Anthropic",
-        "backend": "deepseek",
-        "base_url": "https://api.deepseek.com/anthropic",
-        "upstream_mode": "anthropic",
-        "default_model": "deepseek-chat",
-        "model_aliases": [
-            {"id": "claude-opus-4-8", "display_name": "DeepSeek Native", "backend": "deepseek", "model": "deepseek-chat"},
-        ],
-    },
-    "siliconflow_kimi": {
-        "label": "SiliconFlow Kimi",
+    "siliconflow": {
+        "label": "硅基流动 SiliconFlow",
         "backend": "custom",
         "base_url": "https://api.siliconflow.cn",
         "upstream_mode": "openai",
         "default_model": "Pro/moonshotai/Kimi-K2.6",
+        "inline_image_policy": "preserve",
         "model_aliases": [
-            {"id": "claude-opus-4-8", "display_name": "Kimi K2.6 Pro++", "backend": "custom", "model": "Pro/moonshotai/Kimi-K2.6"},
+            {"id": "claude-opus-4-8", "display_name": "Kimi K2.6 Pro++ (Vision)", "backend": "custom", "model": "Pro/moonshotai/Kimi-K2.6"},
             {"id": "claude-sonnet-5", "display_name": "Kimi K2.7 Code", "backend": "custom", "model": "moonshotai/Kimi-K2.7-Code"},
         ],
     },
-    "dashscope_qwen": {
-        "label": "Alibaba DashScope Qwen",
+    "deepseek": {
+        "label": "DeepSeek 深度求索",
+        "backend": "deepseek",
+        "base_url": "https://api.deepseek.com",
+        "upstream_mode": "openai",
+        "default_model": "deepseek-chat",
+        "inline_image_policy": "omit",
+        "model_aliases": [
+            {"id": "claude-opus-4-8", "display_name": "DeepSeek Chat (V3)", "backend": "deepseek", "model": "deepseek-chat"},
+            {"id": "claude-sonnet-5", "display_name": "DeepSeek Reasoner (R1)", "backend": "deepseek", "model": "deepseek-reasoner"},
+        ],
+    },
+    "dashscope": {
+        "label": "阿里云百炼 通义千问",
         "backend": "custom",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "upstream_mode": "openai",
-        "default_model": "qwen-plus",
+        "default_model": "qwen-max",
+        "inline_image_policy": "omit",
         "model_aliases": [
-            {"id": "claude-opus-4-8", "display_name": "Qwen Plus", "backend": "custom", "model": "qwen-plus"},
-            {"id": "claude-sonnet-5", "display_name": "Qwen Max", "backend": "custom", "model": "qwen-max"},
+            {"id": "claude-opus-4-8", "display_name": "Qwen Max", "backend": "custom", "model": "qwen-max"},
+            {"id": "claude-sonnet-5", "display_name": "Qwen Plus", "backend": "custom", "model": "qwen-plus"},
         ],
     },
-    "moonshot_anthropic": {
-        "label": "Moonshot native Anthropic",
+    "moonshot": {
+        "label": "月之暗面 Moonshot（Kimi）",
         "backend": "custom",
-        "base_url": "https://api.moonshot.cn/anthropic",
-        "upstream_mode": "anthropic",
+        "base_url": "https://api.moonshot.cn/v1",
+        "upstream_mode": "openai",
         "default_model": "kimi-k2-0711-preview",
+        "inline_image_policy": "omit",
         "model_aliases": [
-            {"id": "claude-opus-4-8", "display_name": "Moonshot Kimi", "backend": "custom", "model": "kimi-k2-0711-preview"},
+            {"id": "claude-opus-4-8", "display_name": "Kimi K2", "backend": "custom", "model": "kimi-k2-0711-preview"},
+            {"id": "claude-sonnet-5", "display_name": "Moonshot v1 128K", "backend": "custom", "model": "moonshot-v1-128k"},
+        ],
+    },
+    "zhipu": {
+        "label": "智谱 GLM（BigModel）",
+        "backend": "custom",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "upstream_mode": "openai",
+        "default_model": "glm-4-plus",
+        "inline_image_policy": "omit",
+        "model_aliases": [
+            {"id": "claude-opus-4-8", "display_name": "GLM-4-Plus", "backend": "custom", "model": "glm-4-plus"},
+            {"id": "claude-sonnet-5", "display_name": "GLM-4-Flash", "backend": "custom", "model": "glm-4-flash"},
+        ],
+    },
+    "openai": {
+        "label": "OpenAI",
+        "backend": "openai",
+        "base_url": "https://api.openai.com",
+        "upstream_mode": "openai",
+        "default_model": "gpt-4o",
+        "inline_image_policy": "preserve",
+        "model_aliases": [
+            {"id": "claude-opus-4-8", "display_name": "GPT-4o", "backend": "openai", "model": "gpt-4o"},
+            {"id": "claude-sonnet-5", "display_name": "GPT-4o mini", "backend": "openai", "model": "gpt-4o-mini"},
         ],
     },
 }
@@ -507,6 +780,75 @@ def display_name_for_model(model: str) -> str:
     if "/" in text:
         return text.rsplit("/", 1)[-1]
     return text
+
+
+def _model_text_for_capability(model) -> str:
+    if isinstance(model, dict):
+        parts = [
+            model.get("id"),
+            model.get("model"),
+            model.get("name"),
+            model.get("display_name"),
+            model.get("label"),
+            model.get("owned_by"),
+            model.get("ownedBy"),
+        ]
+    else:
+        parts = [model]
+    text = " ".join(str(part or "") for part in parts)
+    return re.sub(r"[\s_]+", "-", text.lower())
+
+
+def model_supports_vision_input(model) -> bool:
+    """Best-effort capability detection for OpenAI-compatible model lists."""
+    text = _model_text_for_capability(model)
+    if not text:
+        return False
+
+    non_chat_markers = (
+        "embedding", "embed", "bge-", "bce-", "reranker", "rerank",
+        "ocr", "image", "kolors", "flux", "stable-diffusion",
+        "sd-", "diffusion", "voice", "audio", "whisper", "tts",
+        "cosyvoice", "video-generation",
+    )
+    if any(marker in text for marker in non_chat_markers):
+        return False
+
+    vision_patterns = (
+        r"kimi[-/ ]?k2[.-]?6",
+        r"kimi[-/ ]?k2[.-]?5",
+        r"moonshot[-/ ]?v\d+.*vision",
+        r"qwen\d*(?:[.-]\d+)?[-/ ]?vl",
+        r"qwen[-/ ]?vl",
+        r"internvl",
+        r"glm[-/ ]?\d+(?:[.-]\d+)?v",
+        r"gpt[-/ ]?4o",
+        r"gpt[-/ ]?4[.-]?1",
+        r"gpt[-/ ]?5",
+        r"\bo[34](?:[-/ ]|$)",
+        r"gemini",
+        r"claude[-/ ]?3",
+        r"vision",
+        r"visual",
+        r"multi[-/ ]?modal",
+        r"multimodal",
+        r"llava",
+        r"pixtral",
+        r"molmo",
+        r"minicpm[-/ ]?v",
+    )
+    return any(re.search(pattern, text) for pattern in vision_patterns)
+
+
+def recommended_inline_image_policy(backend: str, models=None, fallback: str = "auto") -> str:
+    backend = (backend or "").lower()
+    if backend == "deepseek":
+        return "omit"
+    models = normalize_model_entries(models or [])
+    if any(model_supports_vision_input(model) for model in models):
+        return "preserve"
+    fallback = str(fallback or "auto").strip().lower()
+    return fallback if fallback in {"auto", "preserve", "omit", "omit_inline"} else "auto"
 
 
 def normalize_model_entries(raw_models) -> list[dict]:
@@ -804,6 +1146,8 @@ async def access_log_middleware(request: Request, call_next):
 # Static files for dashboard
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+UPDATE_CHECK_CACHE = {"checked_at": 0.0, "data": None}
+
 # Shared HTTP client
 _client: Optional[httpx.AsyncClient] = None
 
@@ -906,6 +1250,18 @@ TRACE_CUE_RE = re.compile(
     re.IGNORECASE,
 )
 TRACE_PROBE_MIN_CHARS = 12
+REASONING_TAG_NAMES = r"(?:think|thinking|reasoning|analysis)"
+REASONING_OPEN_TAG_RE = re.compile(rf"<\s*{REASONING_TAG_NAMES}\s*>", re.IGNORECASE)
+REASONING_CLOSE_TAG_RE = re.compile(rf"</\s*{REASONING_TAG_NAMES}\s*>", re.IGNORECASE)
+REASONING_ANY_TAG_RE = re.compile(rf"</?\s*{REASONING_TAG_NAMES}\s*>", re.IGNORECASE)
+REASONING_BLOCK_RE = re.compile(
+    rf"<\s*{REASONING_TAG_NAMES}\s*>.*?</\s*{REASONING_TAG_NAMES}\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+REASONING_MARKER_PREFIXES = (
+    "<think", "</think", "<thinking", "</thinking",
+    "<reasoning", "</reasoning", "<analysis", "</analysis",
+)
 
 
 def normalize_tool_name(name, fallback: str) -> str:
@@ -1112,6 +1468,60 @@ def _looks_like_trace_line(line: str) -> bool:
     if not stripped:
         return True
     return bool(TRACE_LINE_RE.search(stripped) or TRACE_NUMBERED_STEP_RE.search(stripped))
+
+
+def _last_regex_match(regex: re.Pattern, text: str):
+    last = None
+    for match in regex.finditer(text):
+        last = match
+    return last
+
+
+def _find_reasoning_markup_start_in_buffer(text: str) -> int:
+    if not text:
+        return -1
+    positions = [m.start() for m in REASONING_ANY_TAG_RE.finditer(text)]
+    lower = text.lower()
+    lt_pos = lower.rfind("<")
+    if lt_pos >= 0:
+        suffix = re.sub(r"\s+", "", lower[lt_pos:])
+        if suffix and any(marker.startswith(suffix) for marker in REASONING_MARKER_PREFIXES):
+            positions.append(lt_pos)
+    return min(positions) if positions else -1
+
+
+def _dedupe_repeated_visible_text(text: str) -> str:
+    stripped = (text or "").strip()
+    if not stripped:
+        return ""
+
+    chunks = [part.strip() for part in re.split(r"\n{2,}", stripped) if part.strip()]
+    if len(chunks) == 2:
+        left = re.sub(r"\s+", "", chunks[0])
+        right = re.sub(r"\s+", "", chunks[1])
+        if left and left == right and len(right) >= 12:
+            return chunks[1]
+    return stripped
+
+
+def strip_assistant_reasoning_markup(text: str) -> str:
+    """Hide provider-leaked reasoning tags and keep only final visible text."""
+    if not isinstance(text, str) or not text.strip():
+        return text or ""
+
+    close_match = _last_regex_match(REASONING_CLOSE_TAG_RE, text)
+    if close_match:
+        # Anything before the last closing reasoning tag is provider scratchpad.
+        after = REASONING_ANY_TAG_RE.sub("", text[close_match.end():]).strip()
+        if after:
+            return _dedupe_repeated_visible_text(after)
+
+    cleaned = REASONING_BLOCK_RE.sub("", text)
+    open_match = REASONING_OPEN_TAG_RE.search(cleaned)
+    if open_match:
+        cleaned = cleaned[:open_match.start()]
+    cleaned = REASONING_ANY_TAG_RE.sub("", cleaned).strip()
+    return _dedupe_repeated_visible_text(cleaned)
 
 
 def strip_assistant_trace_text(text: str, *, aggressive: bool = False) -> str:
@@ -1561,9 +1971,10 @@ def openai_to_anthropic_response(
     else:
         text_content = normal_content
     raw_tool_calls = message.get("tool_calls") or []
+    text_content = strip_assistant_reasoning_markup(text_content)
     text_content, embedded_tool_calls = extract_embedded_tool_calls(text_content, tool_name_lookup)
     text_content = strip_assistant_trace_text(
-        text_content,
+        strip_assistant_reasoning_markup(text_content),
         aggressive=bool(raw_tool_calls or embedded_tool_calls),
     )
     if text_content:
@@ -1633,6 +2044,7 @@ async def translate_stream(
     next_block_index = 0
     pending_text = ""
     capturing_embedded_tools = False
+    capturing_reasoning_text = False
     embedded_tool_text = ""
     hold_visible_text = bool(tool_name_lookup)
 
@@ -1652,6 +2064,7 @@ async def translate_stream(
 
     def text_delta_events(text: str) -> list[str]:
         nonlocal content_block_started, content_block_stopped, content_block_index, next_block_index
+        text = strip_assistant_reasoning_markup(text)
         if not text:
             return []
         events = []
@@ -1673,14 +2086,45 @@ async def translate_stream(
         return events
 
     def buffered_text_events(text_delta: str) -> list[str]:
-        nonlocal pending_text, capturing_embedded_tools, embedded_tool_text, hold_visible_text
+        nonlocal pending_text, capturing_embedded_tools, capturing_reasoning_text, embedded_tool_text, hold_visible_text
         if not text_delta:
             return []
+        if capturing_reasoning_text:
+            close_match = REASONING_CLOSE_TAG_RE.search(text_delta)
+            if not close_match:
+                return []
+            text_delta = text_delta[close_match.end():]
+            capturing_reasoning_text = False
+            if not text_delta:
+                return []
         if capturing_embedded_tools:
             embedded_tool_text += text_delta
             return []
 
         pending_text += text_delta
+        if REASONING_CLOSE_TAG_RE.search(pending_text):
+            pending_text = strip_assistant_reasoning_markup(pending_text)
+            if not pending_text:
+                return []
+
+        open_match = REASONING_OPEN_TAG_RE.search(pending_text)
+        if open_match:
+            before = pending_text[:open_match.start()]
+            after_open = pending_text[open_match.end():]
+            close_match = REASONING_CLOSE_TAG_RE.search(after_open)
+            if close_match:
+                pending_text = strip_assistant_reasoning_markup(before + after_open[close_match.end():])
+                if not pending_text:
+                    return []
+            else:
+                pending_text = before
+                capturing_reasoning_text = True
+                if not pending_text:
+                    return []
+
+        if _find_reasoning_markup_start_in_buffer(pending_text) >= 0:
+            return []
+
         marker_pos = _find_marker_start_in_buffer(pending_text)
         if marker_pos >= 0:
             prefix = pending_text[:marker_pos]
@@ -1704,13 +2148,19 @@ async def translate_stream(
         events = []
         embedded_calls = []
         if pending_text:
-            clean_pending = strip_assistant_trace_text(pending_text, aggressive=aggressive)
+            clean_pending = strip_assistant_trace_text(
+                strip_assistant_reasoning_markup(pending_text),
+                aggressive=aggressive,
+            )
             if clean_pending:
                 events.extend(text_delta_events(clean_pending))
             pending_text = ""
         if embedded_tool_text:
             clean_text, embedded_calls = extract_embedded_tool_calls(embedded_tool_text, tool_name_lookup)
-            clean_text = strip_assistant_trace_text(clean_text, aggressive=aggressive or bool(embedded_calls))
+            clean_text = strip_assistant_trace_text(
+                strip_assistant_reasoning_markup(clean_text),
+                aggressive=aggressive or bool(embedded_calls),
+            )
             embedded_tool_text = ""
             if clean_text:
                 events.extend(text_delta_events(clean_text))
@@ -2196,6 +2646,111 @@ async def api_provider_presets():
     return {"presets": PROVIDER_PRESETS}
 
 
+async def fetch_update_info(refresh: bool = False):
+    now = datetime.now().timestamp()
+    cached = UPDATE_CHECK_CACHE.get("data")
+    checked_at = float(UPDATE_CHECK_CACHE.get("checked_at") or 0)
+    if cached and not refresh and now - checked_at < UPDATE_CACHE_TTL_SECONDS:
+        return cached
+
+    fallback = {
+        "ok": False,
+        "repo": GITHUB_REPO,
+        "current_version": APP_VERSION,
+        "latest_version": APP_VERSION,
+        "latest_tag": f"v{APP_VERSION}",
+        "update_available": False,
+        "html_url": GITHUB_RELEASES_URL,
+        "release_notes_url": GITHUB_RELEASES_URL,
+        "download_url": GITHUB_RELEASES_URL,
+        "assets": [],
+        "install_command": f"curl -fsSL https://raw.githubusercontent.com/{GITHUB_REPO}/main/scripts/install-macos-app.sh | bash",
+        "published_at": "",
+    }
+
+    try:
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "User-Agent": f"Claude-Science-API-Bridge/{APP_VERSION}",
+        }
+        async with httpx.AsyncClient(timeout=8, follow_redirects=True) as c:
+            resp = await c.get(GITHUB_LATEST_API_URL, headers=headers)
+        if resp.status_code != 200:
+            async with httpx.AsyncClient(timeout=8, follow_redirects=True) as c:
+                latest_resp = await c.get(GITHUB_RELEASES_URL, headers={"User-Agent": headers["User-Agent"]})
+            data = build_update_info_from_release_url(str(latest_resp.url), APP_VERSION)
+            if not data.get("ok") or latest_resp.status_code >= 400:
+                data = dict(fallback)
+                data["error"] = f"GitHub HTTP {resp.status_code}"
+            else:
+                data["api_fallback"] = True
+        else:
+            data = build_update_info(resp.json(), APP_VERSION)
+    except Exception as e:
+        data = dict(fallback)
+        data["error"] = str(e)
+
+    data["checked_at"] = datetime.now().isoformat(timespec="seconds")
+    UPDATE_CHECK_CACHE["checked_at"] = now
+    UPDATE_CHECK_CACHE["data"] = data
+    return data
+
+
+@app.get("/api/update-check")
+async def api_update_check(refresh: bool = False):
+    return await fetch_update_info(refresh)
+
+
+@app.get("/api/update-install")
+async def api_update_install_status():
+    return {"ok": True, "install": update_installer_state()}
+
+
+@app.post("/api/update-install")
+async def api_update_install(force: bool = False):
+    state = update_installer_state()
+    if state.get("running"):
+        return {"ok": True, "install": state}
+    if sys.platform != "darwin":
+        return {"ok": False, "error": "一键更新目前只支持 macOS。", "install": state}
+
+    update_info = await fetch_update_info(refresh=True)
+    if not update_info.get("ok"):
+        return {
+            "ok": False,
+            "error": update_info.get("error") or "暂时无法检查 GitHub Latest Release。",
+            "update": update_info,
+            "install": state,
+        }
+    if not update_info.get("update_available") and not force:
+        return {
+            "ok": False,
+            "error": "当前已是最新版。",
+            "update": update_info,
+            "install": state,
+        }
+
+    target_version = normalize_version_tag(update_info.get("latest_version") or "")
+    env_overrides = update_installer_env(update_info)
+    _set_update_installer_state(
+        running=True,
+        status="running",
+        phase="queued",
+        message="更新任务已排队，正在准备下载安装器...",
+        current_version=APP_VERSION,
+        target_version=target_version,
+        latest_tag=update_info.get("latest_tag") or (f"v{target_version}" if target_version else ""),
+        download_url=env_overrides["DMG_URL"],
+        started_at=datetime.now().isoformat(timespec="seconds"),
+        finished_at="",
+        returncode=None,
+        log=[],
+    )
+    worker = threading.Thread(target=run_update_installer, args=(update_info,), daemon=True)
+    worker.start()
+    return {"ok": True, "update": update_info, "install": update_installer_state()}
+
+
 async def fetch_models_from_upstream(
     base_url: str,
     api_key: str,
@@ -2301,10 +2856,25 @@ async def api_apply_models(request: Request):
         "model_list_mode": "aliases",
         "model_menu_strategy": strategy,
     }
+    requested_policy = str(body.get("inline_image_policy") or "").strip().lower()
+    if requested_policy in {"auto", "preserve", "omit", "omit_inline"}:
+        update["inline_image_policy"] = requested_policy
+    else:
+        update["inline_image_policy"] = recommended_inline_image_policy(
+            backend,
+            aliases,
+            config.inline_image_policy,
+        )
     if isinstance(body.get("model_token_caps"), dict):
         update["model_token_caps"] = body["model_token_caps"]
     config.update(update)
-    return {"ok": True, "aliases": aliases, "force_model": first_model, "model_menu_strategy": strategy}
+    return {
+        "ok": True,
+        "aliases": aliases,
+        "force_model": first_model,
+        "model_menu_strategy": strategy,
+        "inline_image_policy": update["inline_image_policy"],
+    }
 
 
 def normalize_provider_profile(raw: dict) -> dict:
@@ -2320,6 +2890,9 @@ def normalize_provider_profile(raw: dict) -> dict:
     if not models and raw.get("default_model"):
         models = normalize_model_entries([str(raw["default_model"])])
     default_model = str(raw.get("default_model") or (models[0]["model"] if models else "")).strip()
+    raw_image_policy = str(raw.get("inline_image_policy") or "").strip().lower()
+    if raw_image_policy not in {"auto", "preserve", "omit", "omit_inline"}:
+        raw_image_policy = recommended_inline_image_policy(backend, models)
     return {
         "id": profile_id,
         "label": str(raw.get("label") or raw.get("name") or profile_id).strip(),
@@ -2330,7 +2903,7 @@ def normalize_provider_profile(raw: dict) -> dict:
         "default_model": default_model,
         "models": models,
         "model_menu_strategy": model_menu_strategy(raw.get("model_menu_strategy") or "claude_compatible"),
-        "inline_image_policy": str(raw.get("inline_image_policy") or "auto").strip(),
+        "inline_image_policy": raw_image_policy,
         "models_url": str(raw.get("models_url") or "").strip(),
         "is_full_url": bool(raw.get("is_full_url") or False),
         "model_token_caps": raw.get("model_token_caps") if isinstance(raw.get("model_token_caps"), dict) else {},
@@ -2378,6 +2951,7 @@ def preset_to_provider_profile(profile_id: str, preset: dict) -> dict:
         "base_url": preset.get("base_url"),
         "upstream_mode": preset.get("upstream_mode"),
         "default_model": preset.get("default_model"),
+        "inline_image_policy": preset.get("inline_image_policy") or "auto",
         "models": [
             {"id": a.get("model"), "display_name": a.get("display_name")}
             for a in preset.get("model_aliases", [])
@@ -2418,6 +2992,7 @@ async def api_provider_profiles():
                 for a in preset.get("model_aliases", [])
             ]),
             "model_menu_strategy": "claude_compatible",
+            "inline_image_policy": preset.get("inline_image_policy") or "auto",
             "builtin": True,
         })
     for profile in config.public_dict().get("provider_profiles") or []:
@@ -2482,6 +3057,21 @@ async def api_patch_model_menu():
         if result.returncode == 0:
             return {"ok": True, "output": result.stdout.strip().splitlines()[-8:]}
         return {"ok": False, "error": (result.stderr or result.stdout)[-1200:]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/open-claude-science")
+async def api_open_claude_science():
+    """Open the Claude Science app (safe: launches the app only, no network/cert/port changes)."""
+    try:
+        result = subprocess.run(
+            ["open", "-a", "Claude Science"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            return {"ok": True}
+        return {"ok": False, "error": (result.stderr or result.stdout or "open failed").strip()[-400:]}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -2701,6 +3291,7 @@ async def api_anthropic_catch_all(request: Request, path: str):
 async def health():
     return {
         "status": "ok",
+        "app_version": APP_VERSION,
         "deepseek_configured": bool(config.deepseek_api_key),
         "openai_configured": bool(config.openai_api_key),
         "custom_configured": bool(config.custom_api_key and config.custom_base_url),

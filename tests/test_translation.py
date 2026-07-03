@@ -157,9 +157,111 @@ def test_provider_presets_include_protocol_modes():
 
     assert response.status_code == 200
     presets = response.json()["presets"]
-    assert presets["siliconflow_kimi"]["upstream_mode"] == "openai"
-    assert presets["deepseek_anthropic"]["upstream_mode"] == "anthropic"
-    assert presets["siliconflow_kimi"]["model_aliases"][0]["id"] == "claude-opus-4-8"
+    # SiliconFlow keeps the required Kimi models on the Claude-facing slots.
+    assert presets["siliconflow"]["upstream_mode"] == "openai"
+    assert presets["siliconflow"]["model_aliases"][0]["id"] == "claude-opus-4-8"
+    kimi_models = [a["model"] for a in presets["siliconflow"]["model_aliases"]]
+    assert kimi_models[:2] == [
+        "Pro/moonshotai/Kimi-K2.6",
+        "moonshotai/Kimi-K2.7-Code",
+    ]
+    # Each preset declares an image policy so text-only models don't 400 on images,
+    # while current multimodal models keep images.
+    assert presets["deepseek"]["inline_image_policy"] == "omit"
+    assert presets["siliconflow"]["inline_image_policy"] == "preserve"
+    assert presets["openai"]["inline_image_policy"] == "preserve"
+
+
+def test_model_capability_detection_recognizes_current_vision_models():
+    assert proxy.model_supports_vision_input("Pro/moonshotai/Kimi-K2.6")
+    assert proxy.model_supports_vision_input("Qwen/Qwen3-VL-32B-Instruct")
+    assert proxy.model_supports_vision_input("glm-4v-plus")
+    assert not proxy.model_supports_vision_input("moonshotai/Kimi-K2.7-Code")
+    assert not proxy.model_supports_vision_input("BAAI/bge-large-zh-v1.5")
+    assert not proxy.model_supports_vision_input("Qwen/Qwen-Image")
+    assert not proxy.model_supports_vision_input("baidu/ERNIE-Image-Turbo")
+
+
+def test_apply_models_auto_preserves_images_for_vision_model():
+    client = TestClient(proxy.app)
+    old_save = proxy.config.save
+    proxy.config.save = lambda: None
+    try:
+        with config_values(
+            default_backend="custom",
+            inline_image_policy="omit",
+            force_model="old-model",
+            model_aliases=[],
+        ):
+            response = client.post("/api/apply-models", json={
+                "provider": "custom",
+                "models": [{"id": "Pro/moonshotai/Kimi-K2.6", "display_name": "Kimi K2.6 Pro++"}],
+                "model_menu_strategy": "claude_compatible",
+            })
+            body = response.json()
+    finally:
+        proxy.config.save = old_save
+
+    assert response.status_code == 200
+    assert body["ok"] is True
+    assert body["inline_image_policy"] == "preserve"
+
+
+def test_version_compare_handles_github_release_tags():
+    assert proxy.normalize_version_tag("v0.2.6") == "0.2.6"
+    assert proxy.is_newer_version("v0.2.10", "0.2.9")
+    assert proxy.is_newer_version("0.3.0", "v0.2.99")
+    assert not proxy.is_newer_version("v0.2.5", "0.2.5")
+
+
+def test_update_info_selects_dmg_asset_and_marks_newer_release():
+    info = proxy.build_update_info({
+        "tag_name": "v0.2.6",
+        "html_url": "https://github.com/Jyx0208/claude-science-api-bridge/releases/tag/v0.2.6",
+        "published_at": "2026-07-03T00:00:00Z",
+        "assets": [
+            {"name": "notes.txt", "browser_download_url": "https://example.test/notes.txt", "size": 10},
+            {"name": "Claude.Science.API.Bridge.dmg", "browser_download_url": "https://example.test/app.dmg", "size": 123},
+        ],
+    }, current_version="0.2.5")
+
+    assert info["update_available"] is True
+    assert info["latest_version"] == "0.2.6"
+    assert info["download_url"] == "https://example.test/app.dmg"
+    assert "install-macos-app.sh" in info["install_command"]
+
+
+def test_update_info_can_fallback_to_latest_release_redirect_url():
+    info = proxy.build_update_info_from_release_url(
+        "https://github.com/Jyx0208/claude-science-api-bridge/releases/tag/v0.2.6",
+        current_version="0.2.5",
+    )
+
+    assert info["ok"] is True
+    assert info["latest_version"] == "0.2.6"
+    assert info["update_available"] is True
+
+
+def test_update_installer_prefers_release_dmg_asset():
+    info = {
+        "download_url": "https://github.com/example/releases/latest",
+        "assets": [
+            {"name": "Claude.Science.API.Bridge.dmg", "browser_download_url": "https://example.test/bridge.dmg"},
+        ],
+    }
+
+    env = proxy.update_installer_env(info)
+
+    assert env["DMG_URL"] == "https://example.test/bridge.dmg"
+    assert env["INSTALL_DIR"].endswith("/Applications")
+
+
+def test_update_installer_falls_back_to_latest_dmg_download_url():
+    info = {"download_url": "https://github.com/Jyx0208/claude-science-api-bridge/releases/latest", "assets": []}
+
+    assert proxy.choose_update_dmg_url(info).endswith(
+        "/releases/latest/download/Claude.Science.API.Bridge.dmg"
+    )
 
 
 def test_ccswitch_style_models_url_candidates_strip_anthropic_suffixes():
@@ -475,6 +577,38 @@ def test_reasoning_content_is_hidden_when_policy_is_never():
     assert converted["content"] == []
 
 
+def test_think_tag_duplicate_answer_keeps_only_final_content():
+    answer = (
+        "你好！我是蛋白质组学专家，专注于质谱蛋白质组学数据分析。\n"
+        "有什么我可以帮你的吗？"
+    )
+    response = {
+        "choices": [{
+            "message": {"content": answer + "</think>" + answer},
+            "finish_reason": "stop",
+        }],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+    }
+
+    converted = proxy.openai_to_anthropic_response(response, "claude-sonnet-4-5", "msg_think_dup")
+
+    assert converted["content"] == [{"type": "text", "text": answer}]
+
+
+def test_full_think_block_is_hidden_from_visible_content():
+    response = {
+        "choices": [{
+            "message": {"content": "<think>先规划一下。</think>最终答案"},
+            "finish_reason": "stop",
+        }],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+    }
+
+    converted = proxy.openai_to_anthropic_response(response, "claude-sonnet-4-5", "msg_think_block")
+
+    assert converted["content"] == [{"type": "text", "text": "最终答案"}]
+
+
 def test_trace_preamble_before_tool_call_is_hidden():
     trace = (
         'The user said "继续" (continue). The session was resumed, which means my Python kernel was reset. '
@@ -741,6 +875,65 @@ def test_streaming_trace_preamble_before_tool_call_is_hidden():
     assert "The user said" not in joined
     assert "用户要求继续分析" not in joined
     assert starts[0]["content_block"]["type"] == "tool_use"
+
+
+def test_streaming_split_think_close_duplicate_keeps_only_final_answer():
+    answer = "你好！我是蛋白质组学专家。有什么我可以帮你的吗？"
+    chunks = [
+        {"choices": [{"delta": {"content": answer + "</thi"}}]},
+        {"choices": [{"delta": {"content": "nk>" + answer}}]},
+        {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+    ]
+
+    async def collect():
+        return [
+            event
+            async for event in proxy.translate_stream(
+                _FakeOpenAIStream(chunks),
+                "claude-sonnet-4-5",
+                "msg_think_stream",
+            )
+        ]
+
+    events = asyncio.run(collect())
+    joined = "".join(events)
+    text = "".join(
+        p.get("delta", {}).get("text", "")
+        for p in _stream_payloads(events)
+        if p.get("delta", {}).get("type") == "text_delta"
+    )
+
+    assert "</think>" not in joined
+    assert text == answer
+
+
+def test_streaming_think_block_is_hidden_until_final_answer():
+    chunks = [
+        {"choices": [{"delta": {"content": "<think>先规划一下。"}}]},
+        {"choices": [{"delta": {"content": "</think>最终答案"}}]},
+        {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+    ]
+
+    async def collect():
+        return [
+            event
+            async for event in proxy.translate_stream(
+                _FakeOpenAIStream(chunks),
+                "claude-sonnet-4-5",
+                "msg_think_stream_block",
+            )
+        ]
+
+    events = asyncio.run(collect())
+    joined = "".join(events)
+    text = "".join(
+        p.get("delta", {}).get("text", "")
+        for p in _stream_payloads(events)
+        if p.get("delta", {}).get("type") == "text_delta"
+    )
+
+    assert "先规划" not in joined
+    assert text == "最终答案"
 
 
 def test_streaming_normal_answer_with_tools_available_is_delivered_on_finish():

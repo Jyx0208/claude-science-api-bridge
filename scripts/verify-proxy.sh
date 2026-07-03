@@ -95,7 +95,7 @@ if [ "${VERIFY_IMAGE:-0}" = "1" ]; then
     exit 1
   fi
   "$PYTHON" - <<'PY' > "$TMP_DIR/red.ppm"
-w = h = 32
+w = h = 128
 print(f"P3\n{w} {h}\n255")
 for _ in range(w * h):
     print("255 0 0")

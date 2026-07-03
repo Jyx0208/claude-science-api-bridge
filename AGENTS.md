@@ -24,6 +24,8 @@ Only use advanced HTTPS interception after the user explicitly approves it for t
 Make Claude Science usable with DeepSeek, OpenAI, or another OpenAI-compatible API provider.
 If the user needs image understanding, choose a vision-capable backend model and preserve image inputs instead of replacing them with text placeholders.
 
+On Linux, support covers the local proxy, Dashboard, service installation, and compatible clients that honor `ANTHROPIC_BASE_URL`. Claude Science desktop startup and daemon patches are macOS-only.
+
 The safe path is:
 
 1. Run a local HTTP proxy on `127.0.0.1:9876`.
@@ -57,6 +59,7 @@ The safe path is:
 - `setup-network.sh`: advanced HTTPS interception. Treat as opt-in only.
 - `docs/agent-runbook.md`: step-by-step procedure for agents.
 - `docs/network-interception.md`: advanced interception notes.
+- `docs/linux.md`: Linux systemd/fallback installation and current limitations.
 - `docs/troubleshooting.md`: failure modes and fixes.
 - `config.example.json`: public, sanitized config template.
 
