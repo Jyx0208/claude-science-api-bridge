@@ -210,7 +210,7 @@ def test_profile_to_config_update_builds_menu_aliases_without_exposing_secret():
         "backend": "custom",
         "base_url": "https://api.siliconflow.cn",
         "upstream_mode": "openai",
-        "api_key": "unit-test-secret",
+        "api_key": "sk-test-secret",
         "default_model": "Pro/moonshotai/Kimi-K2.6",
         "models": [{"id": "Pro/moonshotai/Kimi-K2.6", "display_name": "Kimi K2.6 Pro++"}],
         "model_menu_strategy": "claude_compatible",
@@ -218,7 +218,7 @@ def test_profile_to_config_update_builds_menu_aliases_without_exposing_secret():
     })
     update = proxy.profile_to_config_update(profile)
 
-    assert update["custom_api_key"] == "unit-test-secret"
+    assert update["custom_api_key"] == "sk-test-secret"
     assert update["custom_base_url"] == "https://api.siliconflow.cn"
     assert update["model_aliases"][0]["id"] == "claude-opus-4-8"
     assert update["model_aliases"][0]["model"] == "Pro/moonshotai/Kimi-K2.6"
