@@ -23,7 +23,9 @@ curl -fsSL https://raw.githubusercontent.com/Jyx0208/claude-science-api-bridge/m
 - 支持流式、非流式、工具调用、工具结果、真实图片输入和基础 token 计数
 - 对支持视觉的 OpenAI 兼容模型保留图片输入；对文本模型可自动省略图片，避免后端报错
 - 自动生成 Claude Science 可接受的本地 fake OAuth token
-- 支持第三方模型别名，让 Claude Science 模型选择里显示 Kimi、Qwen、GPT 等真实后端模型名
+- 支持 cc-switch 风格的 Provider 配置档：provider、base_url、协议模式、API key、模型映射可保存和切换
+- 支持一键从当前 Provider 拉取 `/v1/models` 模型列表，并把选中的模型应用到 Claude Science 菜单
+- 支持第三方模型菜单映射，让 Claude Science 模型选择里显示 Kimi、Qwen、GPT 等真实后端模型名
 - 可安全补丁本地 daemon 复制件，把硬编码的 Opus/Sonnet 菜单替换成 BYOK 模型菜单
 - 支持 Provider 预设、OpenAI 兼容翻译与 Anthropic 原生透传两种上游模式
 - 支持可选 path-secret 本地鉴权，避免本机其他进程随便调用你的第三方 key
@@ -43,7 +45,9 @@ curl -fsSL https://raw.githubusercontent.com/Jyx0208/claude-science-api-bridge/m
 
 如果 Claude Science 的某些硬编码 HTTPS 请求必须拦截，可以使用高级模式，但需要先阅读 `docs/network-interception.md`，并由用户明确同意。
 
-本项目也吸收了 [CSswitch](https://github.com/SuperJJ007/CSswitch) 的几个安全设计：入站 Claude OAuth/API key 不转发给第三方、Provider 预设、path-secret 本地鉴权、优先使用 provider 的 Anthropic 原生端点。我们的默认模式仍保持兼容：不强制 secret，不默认切换用户已经跑通的 provider。
+本项目不打算重写一个完整的 [cc-switch](https://github.com/farion1231/cc-switch)。更合理的方向是复用它已经验证过的思路：Provider 配置档、模型列表拉取、endpoint 候选推导、模型映射、官方/第三方隔离。本项目只增加 Claude Science 专用的 OAuth 门票、Anthropic/OpenAI 翻译、daemon 模型菜单补丁和安全安装脚本。
+
+同时也吸收了 [CSSwitch](https://github.com/SuperJJ007/CSswitch) 的几个 Science 方向安全设计：入站 Claude OAuth/API key 不转发给第三方、path-secret 本地鉴权、优先使用 provider 的 Anthropic 原生端点。我们的默认模式仍保持兼容：不强制 secret，不默认修改 Clash、DNS 或系统代理。
 
 ## 用户怎么使用
 
@@ -82,7 +86,8 @@ https://github.com/Jyx0208/claude-science-api-bridge
 3. 后端使用我提供的第三方 API。
 4. 如果我要求读图，请使用支持视觉输入的模型，不要把图片替换成文本占位。
 5. 让 Claude Science 的模型选择里显示第三方模型别名，而不是只显示 Opus / Sonnet / Haiku。
-6. 完成端到端验证，确认 /v1/models 和 /v1/messages 都成功；如果启用读图，还要完成图片请求验证。
+6. 使用 Dashboard 或 /api/fetch-models 一键获取当前 provider 模型列表，让我选择实际要用的第三方模型。
+7. 完成端到端验证，确认 /v1/models 和 /v1/messages 都成功；如果启用读图，还要完成图片请求验证。
 
 我的后端配置：
 - provider: DeepSeek / OpenAI / Custom（三选一；硅基流动 Kimi 请选择 Custom；如果我没写，请先问我）
@@ -103,13 +108,14 @@ https://github.com/Jyx0208/claude-science-api-bridge
 2. 先运行 ./scripts/doctor.sh 做只读诊断。
 3. 按 AGENTS.md 和 docs/agent-runbook.md 执行安全安装。
 4. 将 API key 和模型配置写入本地 config.json，确保 config.json 不会提交到 Git。
-5. 配置 model_aliases 和 model_list_mode=aliases，让 /v1/models 只返回第三方模型别名。
-6. 运行 ./scripts/self-test.sh。
-7. 启动或重启代理服务。
-8. 运行 ./scripts/verify-proxy.sh 做 health、models、messages 和 recent-requests 验证。
-9. 如果模型支持读图，运行 VERIFY_IMAGE=1 ./scripts/verify-proxy.sh 做真实图片输入验证。
-10. 运行 ./scripts/start-claude-science.sh，让脚本自动刷新 token、补丁本地 daemon 复制件并重启 Claude Science。
-11. 再检查 http://127.0.0.1:9876/api/recent-requests，确认 Claude Science 命中了本地代理。
+5. 优先调用 /api/fetch-models 获取当前 provider 的模型列表；若 provider 不支持模型列表，再手动使用用户给定模型。
+6. 配置 model_aliases、model_list_mode=aliases 和 model_menu_strategy=claude_compatible，让 /v1/models 返回第三方模型显示名，同时使用 Claude Science 更容易放行的菜单槽位。
+7. 运行 ./scripts/self-test.sh。
+8. 启动或重启代理服务。
+9. 运行 ./scripts/verify-proxy.sh 做 health、models、messages 和 recent-requests 验证。
+10. 如果模型支持读图，运行 VERIFY_IMAGE=1 ./scripts/verify-proxy.sh 做真实图片输入验证。
+11. 运行 ./scripts/start-claude-science.sh，让脚本自动刷新 token、补丁本地 daemon 复制件并重启 Claude Science。
+12. 再检查 http://127.0.0.1:9876/api/recent-requests，确认 Claude Science 命中了本地代理。
 
 如果遇到问题：
 1. 先运行 ./scripts/doctor.sh。
@@ -183,13 +189,14 @@ https://github.com/Jyx0208/claude-science-api-bridge
   "force_model": "provider-model-name",
   "model_aliases": [
     {
-      "id": "byok-model-0001",
+      "id": "claude-opus-4-8",
       "display_name": "Provider Model",
       "backend": "custom",
       "model": "provider-model-name"
     }
   ],
   "model_list_mode": "aliases",
+  "model_menu_strategy": "claude_compatible",
   "model_token_caps": {
     "provider-model-name": 8192
   },
@@ -211,13 +218,14 @@ https://github.com/Jyx0208/claude-science-api-bridge
   "force_model": "Pro/moonshotai/Kimi-K2.6",
   "model_aliases": [
     {
-      "id": "byok-model-0001",
+      "id": "claude-opus-4-8",
       "display_name": "Kimi K2.6 Pro++",
       "backend": "custom",
       "model": "Pro/moonshotai/Kimi-K2.6"
     }
   ],
   "model_list_mode": "aliases",
+  "model_menu_strategy": "claude_compatible",
   "inline_image_policy": "preserve",
   "reasoning_content_policy": "never"
 }
@@ -245,6 +253,14 @@ DeepSeek 原生 Anthropic 示例：
 ```
 
 Dashboard 的「Provider 预设」可以快速套用常见 provider 的 base URL、协议模式、默认模型和模型别名。套用预设不会写入 API key；key 仍需本地配置。
+
+Dashboard 的「一键获取模型列表」会使用当前 provider 的 API key 调用上游模型列表端点。模型端点会按 cc-switch 的思路自动尝试：
+
+- `{base_url}/v1/models`
+- `{base_url}/models`，当 base_url 已以 `/v1`、`/v4` 等版本段结尾时
+- 剥离 `/anthropic`、`/api/anthropic`、`/apps/anthropic`、`/api/coding`、`/coding` 等兼容子路径后再尝试 `/v1/models` 和 `/models`
+
+拉取成功后，可以勾选模型并点击「应用到菜单」或「应用并补丁菜单」。默认 `model_menu_strategy=claude_compatible`：Claude Science 看到的 ID 仍是 `claude-opus-4-8`、`claude-sonnet-5` 等它认可的槽位，但显示名和实际请求模型都是第三方模型。
 
 ## 本地 Path-Secret
 
@@ -284,8 +300,8 @@ Claude Science 的模型选择界面有一部分来自本地 daemon 的硬编码
 这个脚本只修改 `~/.claude-science/bin/claude-science` 这一份用户目录里的 daemon 复制件，不修改 `/Applications/Claude Science.app`，也不修改 Clash、DNS、系统代理、证书或 443 端口。脚本会：
 
 - 备份本地 daemon 复制件
-- 把 Claude-facing 模型 ID 改成固定别名：`byok-model-0001`、`byok-model-0002`、`byok-model-000003`
-- 把显示名改成 `model_aliases` 里的第三方模型名
+- 默认把 Claude-facing 模型 ID 保持为 Claude Science 认可的槽位：`claude-opus-4-8`、`claude-sonnet-5`、`claude-sonnet-4-6`
+- 把显示名改成 `model_aliases` 里的第三方模型名，例如 `Kimi K2.6 Pro++`
 - 同步写回 `config.json`，确保这些菜单 ID 能路由到真实后端模型
 - 重新 ad-hoc 签名并执行 daemon 可运行检查
 
@@ -295,17 +311,20 @@ Claude Science 的模型选择界面有一部分来自本地 daemon 的硬编码
 {
   "model_aliases": [
     {
-      "id": "byok-model-0001",
+      "id": "claude-opus-4-8",
       "display_name": "Kimi K2.6 Pro++",
       "backend": "custom",
       "model": "Pro/moonshotai/Kimi-K2.6"
     }
   ],
-  "model_list_mode": "aliases"
+  "model_list_mode": "aliases",
+  "model_menu_strategy": "claude_compatible"
 }
 ```
 
 `model_aliases` 中的 `id` 是 Claude Science 看到的模型 ID，`model` 是实际发给第三方 API 的模型名。别名命中时会优先于 `force_model`，所以用户在菜单里选择哪个第三方别名，代理就会调用对应的真实模型。
+
+也可以设置 `model_menu_strategy=real_ids`，让 `/v1/models` 直接暴露第三方真实模型 ID。但部分 Claude Science 版本会把非 `claude-*` 模型塞进 More models 或直接隐藏，所以默认推荐 `claude_compatible`。
 
 ## 图片 / 读图能力
 

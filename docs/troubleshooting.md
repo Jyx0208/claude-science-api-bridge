@@ -126,9 +126,11 @@ curl -sS http://127.0.0.1:9876/v1/models
 
 Expected:
 
-- `/v1/models` returns `byok-model-0001` or other configured aliases.
+- `/v1/models` returns Claude-compatible menu slots such as `claude-opus-4-8`, with third-party display names.
 - Claude Science model picker shows the configured third-party display name, such as `Kimi K2.6 Pro++`.
 - Requests in `/api/recent-requests` route to the real backend model configured in `model_aliases`.
+
+If you want the raw provider model IDs, set `model_menu_strategy=real_ids`, but some Claude Science builds may hide non-`claude-*` IDs or move them into overflow UI. The default `claude_compatible` strategy is usually more reliable.
 
 If the patch script reports an unsupported daemon build, keep the app usable through `ANTHROPIC_BASE_URL` and inspect the current daemon strings before writing a new byte-length-preserving patch. Do not patch `/Applications/Claude Science.app` unless the user explicitly asks.
 

@@ -159,6 +159,70 @@ def test_provider_presets_include_protocol_modes():
     presets = response.json()["presets"]
     assert presets["siliconflow_kimi"]["upstream_mode"] == "openai"
     assert presets["deepseek_anthropic"]["upstream_mode"] == "anthropic"
+    assert presets["siliconflow_kimi"]["model_aliases"][0]["id"] == "claude-opus-4-8"
+
+
+def test_ccswitch_style_models_url_candidates_strip_anthropic_suffixes():
+    assert proxy.build_models_url_candidates("https://api.siliconflow.cn") == [
+        "https://api.siliconflow.cn/v1/models",
+    ]
+    assert proxy.build_models_url_candidates("https://api.deepseek.com/anthropic") == [
+        "https://api.deepseek.com/anthropic/v1/models",
+        "https://api.deepseek.com/v1/models",
+        "https://api.deepseek.com/models",
+    ]
+    assert proxy.build_models_url_candidates("https://open.bigmodel.cn/api/coding/paas/v4") == [
+        "https://open.bigmodel.cn/api/coding/paas/v4/models",
+        "https://open.bigmodel.cn/api/coding/paas/v4/v1/models",
+    ]
+
+
+def test_claude_compatible_aliases_show_provider_names_but_route_real_models():
+    aliases = proxy.build_aliases_from_models(
+        [
+            {"id": "Pro/moonshotai/Kimi-K2.6", "display_name": "Kimi K2.6 Pro++"},
+            {"id": "qwen-plus", "display_name": "Qwen Plus"},
+        ],
+        "custom",
+        "claude_compatible",
+    )
+
+    assert aliases == [
+        {
+            "id": "claude-opus-4-8",
+            "display_name": "Kimi K2.6 Pro++",
+            "backend": "custom",
+            "model": "Pro/moonshotai/Kimi-K2.6",
+        },
+        {
+            "id": "claude-sonnet-5",
+            "display_name": "Qwen Plus",
+            "backend": "custom",
+            "model": "qwen-plus",
+        },
+    ]
+
+
+def test_profile_to_config_update_builds_menu_aliases_without_exposing_secret():
+    profile = proxy.normalize_provider_profile({
+        "id": "kimi-local",
+        "label": "Kimi",
+        "backend": "custom",
+        "base_url": "https://api.siliconflow.cn",
+        "upstream_mode": "openai",
+        "api_key": "unit-test-secret",
+        "default_model": "Pro/moonshotai/Kimi-K2.6",
+        "models": [{"id": "Pro/moonshotai/Kimi-K2.6", "display_name": "Kimi K2.6 Pro++"}],
+        "model_menu_strategy": "claude_compatible",
+        "inline_image_policy": "preserve",
+    })
+    update = proxy.profile_to_config_update(profile)
+
+    assert update["custom_api_key"] == "unit-test-secret"
+    assert update["custom_base_url"] == "https://api.siliconflow.cn"
+    assert update["model_aliases"][0]["id"] == "claude-opus-4-8"
+    assert update["model_aliases"][0]["model"] == "Pro/moonshotai/Kimi-K2.6"
+    assert update["inline_image_policy"] == "preserve"
 
 
 def test_required_path_secret_protects_v1_and_does_not_log_secret():

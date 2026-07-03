@@ -128,6 +128,19 @@
   .log-status.error { color: var(--red); }
   .log-empty { color: var(--text-dim); text-align: center; padding: 30px; font-size: 13px; }
 
+  .model-list {
+    max-height: 220px; overflow-y: auto; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--bg);
+  }
+  .model-row {
+    display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+    border-bottom: 1px solid rgba(48,54,61,0.55); font-size: 12px;
+  }
+  .model-row:last-child { border-bottom: none; }
+  .model-row input { width: auto; }
+  .model-id { font-family: 'SF Mono', 'Monaco', 'Menlo', monospace; flex: 1; word-break: break-all; }
+  .model-owner { color: var(--text-dim); font-size: 11px; }
+
   /* Tabs */
   .tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
   .tab {
@@ -226,6 +239,19 @@
       </div>
       <div class="btn-group">
         <button class="btn btn-outline btn-sm" onclick="applyProviderPreset()">⚡ 应用预设</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="margin-bottom:14px"><span class="icon">🗂</span> Provider 配置档</div>
+      <div class="form-group">
+        <label>已保存 / 内置配置档</label>
+        <select id="providerProfile"></select>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary btn-sm" onclick="activateProviderProfile()">✅ 应用配置档</button>
+        <button class="btn btn-outline btn-sm" onclick="saveCurrentProfile()">💾 保存当前配置</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteProviderProfile()">🗑 删除自定义配置档</button>
       </div>
     </div>
 
@@ -351,9 +377,17 @@
         </select>
       </div>
       <div class="form-group">
+        <label>Claude Science 菜单策略</label>
+        <select id="modelMenuStrategy">
+          <option value="claude_compatible">claude_compatible：使用 Claude 认可槽位显示第三方模型名</option>
+          <option value="real_ids">real_ids：直接暴露第三方真实模型 ID（可能进入 More models 或被隐藏）</option>
+          <option value="custom_ids">custom_ids：使用 byok-model-* 固定别名</option>
+        </select>
+      </div>
+      <div class="form-group">
         <label>第三方模型别名（JSON）</label>
         <textarea id="modelAliases" rows="7" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:8px;font-family:monospace"
-          placeholder='[{"id":"byok-model-0001","display_name":"Kimi K2.6 Pro++","backend":"custom","model":"Pro/moonshotai/Kimi-K2.6"}]'></textarea>
+          placeholder='[{"id":"claude-opus-4-8","display_name":"Kimi K2.6 Pro++","backend":"custom","model":"Pro/moonshotai/Kimi-K2.6"}]'></textarea>
       </div>
       <div class="form-group">
         <label>模型 max_tokens 上限（JSON，留空不夹取）</label>
@@ -375,6 +409,32 @@
         <label>本地 path-secret</label>
         <input type="password" id="proxyAuthToken" placeholder="留空关闭；required 时脚本会拼进 ANTHROPIC_BASE_URL" autocomplete="off">
       </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="margin-bottom:14px"><span class="icon">📥</span> 一键获取模型列表</div>
+      <div class="form-group">
+        <label>从哪个 Provider 拉取</label>
+        <select id="modelFetchProvider">
+          <option value="custom">Custom</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="openai">OpenAI</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Models URL 覆写（可选）</label>
+        <input type="text" id="modelsUrlOverride" placeholder="留空则自动尝试 /v1/models、/models、兼容子路径">
+      </div>
+      <div class="btn-group" style="margin-bottom:12px">
+        <button class="btn btn-outline btn-sm" onclick="fetchModels()">📥 获取模型列表</button>
+        <button class="btn btn-primary btn-sm" onclick="applyFetchedModels(false)">✅ 应用到菜单</button>
+        <button class="btn btn-primary btn-sm" onclick="applyFetchedModels(true)">🚀 应用并补丁菜单</button>
+        <button class="btn btn-outline btn-sm" onclick="saveFetchedProfile()">💾 保存为配置档</button>
+      </div>
+      <div class="model-list" id="fetchedModelList">
+        <div class="log-empty">还没有拉取模型列表</div>
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:8px" id="modelFetchHint"></div>
     </div>
 
     <div class="card">
@@ -534,7 +594,15 @@ async function api(path, opts={}) {
   return res.json();
 }
 
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
 let providerPresets = {};
+let providerProfiles = [];
+let fetchedModels = [];
 
 async function loadProviderPresets() {
   try {
@@ -542,9 +610,22 @@ async function loadProviderPresets() {
     providerPresets = res.presets || {};
     const select = document.getElementById('providerPreset');
     select.innerHTML = Object.entries(providerPresets).map(([id, preset]) =>
-      `<option value="${id}">${preset.label || id}</option>`
+      `<option value="${escapeHtml(id)}">${escapeHtml(preset.label || id)}</option>`
     ).join('');
   } catch(e) { console.error('Load provider presets failed:', e); }
+}
+
+async function loadProviderProfiles() {
+  try {
+    const res = await api('/api/provider-profiles');
+    providerProfiles = res.profiles || [];
+    const select = document.getElementById('providerProfile');
+    select.innerHTML = providerProfiles.map(profile => {
+      const mark = profile.builtin ? '内置' : '自定义';
+      const active = profile.id === res.active_profile_id ? ' · 当前' : '';
+      return `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.label || profile.id)} (${mark}${active})</option>`;
+    }).join('');
+  } catch(e) { console.error('Load provider profiles failed:', e); }
 }
 
 // ── Toggle password visibility ──
@@ -571,6 +652,7 @@ async function loadConfig() {
     document.getElementById('defaultBackend').value = cfg.default_backend || 'deepseek';
     document.getElementById('forceModel').value = cfg.force_model || '';
     document.getElementById('modelListMode').value = cfg.model_list_mode || 'aliases_first';
+    document.getElementById('modelMenuStrategy').value = cfg.model_menu_strategy || 'claude_compatible';
     document.getElementById('modelAliases').value = JSON.stringify(cfg.model_aliases || [], null, 2);
     document.getElementById('modelTokenCaps').value = JSON.stringify(cfg.model_token_caps || {}, null, 2);
     document.getElementById('defaultMaxTokensCap').value = cfg.default_max_tokens_cap || 0;
@@ -611,6 +693,7 @@ async function applyProviderPreset() {
     force_model: preset.default_model || '',
     model_aliases: preset.model_aliases || [],
     model_list_mode: 'aliases',
+    model_menu_strategy: 'claude_compatible',
   };
   if (preset.backend === 'deepseek') {
     body.deepseek_base_url = preset.base_url;
@@ -627,8 +710,76 @@ async function applyProviderPreset() {
   if (res.ok) {
     toast('Provider 预设已应用', 'success');
     loadConfig();
+    loadProviderProfiles();
   } else {
     toast('应用预设失败: ' + (res.error || ''), 'error');
+  }
+}
+
+async function activateProviderProfile() {
+  const id = document.getElementById('providerProfile').value;
+  if (!id) { toast('请选择配置档', 'error'); return; }
+  const res = await api(`/api/provider-profiles/${encodeURIComponent(id)}/activate`, { method: 'POST' });
+  if (res.ok) {
+    toast('配置档已应用', 'success');
+    loadConfig();
+    loadProviderProfiles();
+  } else {
+    toast('应用失败: ' + (res.error || ''), 'error');
+  }
+}
+
+function currentProviderSettings(provider) {
+  return {
+    provider,
+    backend: provider,
+    api_key: document.getElementById(provider + 'Key').value,
+    base_url: document.getElementById(provider + 'Base').value,
+    upstream_mode: document.getElementById(provider + 'Mode').value,
+  };
+}
+
+async function saveCurrentProfile() {
+  const provider = document.getElementById('defaultBackend').value || 'custom';
+  let modelAliases = [];
+  try { modelAliases = JSON.parse(document.getElementById('modelAliases').value || '[]'); } catch(e) { toast('第三方模型别名 JSON 格式错误', 'error'); return; }
+  const settings = currentProviderSettings(provider);
+  const models = modelAliases.map(a => ({ id: a.model || a.id, display_name: a.display_name || a.model || a.id }));
+  const label = `${provider}:${document.getElementById('forceModel').value || (models[0] && models[0].id) || 'model'}`;
+  const res = await api('/api/provider-profiles', {
+    method: 'POST',
+    body: JSON.stringify({
+      id: `profile-${provider}-${Date.now()}`,
+      label,
+      backend: provider,
+      base_url: settings.base_url,
+      upstream_mode: settings.upstream_mode,
+      api_key: settings.api_key,
+      default_model: document.getElementById('forceModel').value,
+      models,
+      model_menu_strategy: document.getElementById('modelMenuStrategy').value,
+      inline_image_policy: document.getElementById('inlineImagePolicy').value,
+    })
+  });
+  if (res.ok) {
+    toast('当前配置已保存为配置档', 'success');
+    loadProviderProfiles();
+  } else {
+    toast('保存配置档失败: ' + (res.error || ''), 'error');
+  }
+}
+
+async function deleteProviderProfile() {
+  const id = document.getElementById('providerProfile').value;
+  const profile = providerProfiles.find(p => p.id === id);
+  if (!id || !profile) { toast('请选择配置档', 'error'); return; }
+  if (profile.builtin) { toast('内置配置档不能删除', 'error'); return; }
+  const res = await api(`/api/provider-profiles/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (res.ok) {
+    toast('配置档已删除', 'success');
+    loadProviderProfiles();
+  } else {
+    toast('删除失败: ' + (res.error || ''), 'error');
   }
 }
 
@@ -650,7 +801,7 @@ async function saveProvider(provider) {
   }
   const res = await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
   if (res.ok) {
-    toast(`${provider === 'deepseek' ? 'DeepSeek' : 'OpenAI'} 配置已保存`, 'success');
+    toast(`${provider === 'deepseek' ? 'DeepSeek' : provider === 'openai' ? 'OpenAI' : 'Custom'} 配置已保存`, 'success');
     loadConfig();
   } else {
     toast('保存失败: ' + (res.error || 'Unknown error'), 'error');
@@ -670,6 +821,7 @@ async function saveRouting() {
     default_backend: document.getElementById('defaultBackend').value,
     force_model: document.getElementById('forceModel').value,
     model_list_mode: document.getElementById('modelListMode').value,
+    model_menu_strategy: document.getElementById('modelMenuStrategy').value,
     model_aliases: modelAliases,
     model_token_caps: modelTokenCaps,
     default_max_tokens_cap: Number(document.getElementById('defaultMaxTokensCap').value || 0),
@@ -686,10 +838,110 @@ async function saveRouting() {
     reasoning_content_policy: document.getElementById('reasoningPolicy').value,
     inline_image_policy: document.getElementById('inlineImagePolicy').value,
   };
+  const proxyAuthToken = document.getElementById('proxyAuthToken').value;
   if (proxyAuthToken) body.proxy_auth_token = proxyAuthToken;
   const res = await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
   if (res.ok) {
     toast('路由配置已保存，已即时生效', 'success');
+  } else {
+    toast('保存失败: ' + (res.error || ''), 'error');
+  }
+}
+
+function renderFetchedModels(models) {
+  const list = document.getElementById('fetchedModelList');
+  if (!models || models.length === 0) {
+    list.innerHTML = '<div class="log-empty">没有获取到模型</div>';
+    return;
+  }
+  list.innerHTML = models.map((m, idx) => `
+    <label class="model-row">
+      <input type="checkbox" class="fetched-model-check" value="${idx}" ${idx < 3 ? 'checked' : ''}>
+      <span class="model-id">${escapeHtml(m.id)}</span>
+      <span class="model-owner">${escapeHtml(m.owned_by || '')}</span>
+    </label>
+  `).join('');
+}
+
+async function fetchModels() {
+  const provider = document.getElementById('modelFetchProvider').value;
+  const settings = currentProviderSettings(provider);
+  const modelsUrl = document.getElementById('modelsUrlOverride').value;
+  toast('正在获取模型列表...', 'info');
+  const res = await api('/api/fetch-models', {
+    method: 'POST',
+    body: JSON.stringify({ ...settings, models_url: modelsUrl })
+  });
+  if (res.ok) {
+    fetchedModels = res.models || [];
+    renderFetchedModels(fetchedModels);
+    document.getElementById('modelFetchHint').textContent = `获取到 ${fetchedModels.length} 个模型；已尝试 ${Array.from(new Set(res.attempted || [])).join(' , ')}`;
+    toast(`已获取 ${fetchedModels.length} 个模型`, 'success');
+  } else {
+    document.getElementById('modelFetchHint').textContent = res.error || '';
+    toast('获取失败: ' + (res.error || ''), 'error');
+  }
+}
+
+function selectedFetchedModels() {
+  return Array.from(document.querySelectorAll('.fetched-model-check:checked'))
+    .map(el => fetchedModels[Number(el.value)])
+    .filter(Boolean);
+}
+
+async function applyFetchedModels(patchMenu) {
+  const provider = document.getElementById('modelFetchProvider').value;
+  const models = selectedFetchedModels();
+  if (models.length === 0) { toast('请至少选择一个模型', 'error'); return; }
+  const res = await api('/api/apply-models', {
+    method: 'POST',
+    body: JSON.stringify({
+      provider,
+      models,
+      model_menu_strategy: document.getElementById('modelMenuStrategy').value,
+    })
+  });
+  if (!res.ok) {
+    toast('应用模型失败: ' + (res.error || ''), 'error');
+    return;
+  }
+  toast('模型已应用到路由配置', 'success');
+  await loadConfig();
+  if (patchMenu) {
+    const patched = await api('/api/patch-model-menu', { method: 'POST' });
+    if (patched.ok) {
+      toast('daemon 菜单补丁已完成，重启 Claude Science 后生效', 'success');
+    } else {
+      toast('菜单补丁失败: ' + (patched.error || ''), 'error');
+    }
+  }
+}
+
+async function saveFetchedProfile() {
+  const provider = document.getElementById('modelFetchProvider').value;
+  const models = selectedFetchedModels();
+  if (models.length === 0) { toast('请至少选择一个模型', 'error'); return; }
+  const settings = currentProviderSettings(provider);
+  const label = `${provider}:${models[0].id}`;
+  const res = await api('/api/provider-profiles', {
+    method: 'POST',
+    body: JSON.stringify({
+      id: `profile-${provider}-${Date.now()}`,
+      label,
+      backend: provider,
+      base_url: settings.base_url,
+      upstream_mode: settings.upstream_mode,
+      api_key: settings.api_key,
+      default_model: models[0].id,
+      models,
+      model_menu_strategy: document.getElementById('modelMenuStrategy').value,
+      inline_image_policy: document.getElementById('inlineImagePolicy').value,
+      models_url: document.getElementById('modelsUrlOverride').value,
+    })
+  });
+  if (res.ok) {
+    toast('已保存为配置档', 'success');
+    loadProviderProfiles();
   } else {
     toast('保存失败: ' + (res.error || ''), 'error');
   }
@@ -780,6 +1032,7 @@ async function clearLogs() {
 
 // ── Init ──
 loadProviderPresets();
+loadProviderProfiles();
 loadConfig();
 setInterval(loadConfig, 30000); // Auto-refresh config every 30s
 </script>

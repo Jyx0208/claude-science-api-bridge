@@ -72,6 +72,7 @@ mapping = {
     "DEFAULT_BACKEND": "default_backend",
     "FORCE_MODEL": "force_model",
     "MODEL_LIST_MODE": "model_list_mode",
+    "MODEL_MENU_STRATEGY": "model_menu_strategy",
     "DEFAULT_MAX_TOKENS_CAP": "default_max_tokens_cap",
     "DEEPSEEK_UPSTREAM_MODE": "deepseek_upstream_mode",
     "OPENAI_UPSTREAM_MODE": "openai_upstream_mode",
@@ -93,6 +94,7 @@ for env_key, config_key in {
     "CUSTOM_MODEL_MAP": "custom_model_map",
     "MODEL_ALIASES": "model_aliases",
     "MODEL_TOKEN_CAPS": "model_token_caps",
+    "PROVIDER_PROFILES": "provider_profiles",
 }.items():
     value = os.environ.get(env_key)
     if value:

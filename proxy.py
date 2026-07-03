@@ -69,8 +69,11 @@ class Config:
         "custom_model_map": {},
         "model_aliases": [],
         "model_list_mode": "aliases_first",
+        "model_menu_strategy": "claude_compatible",
         "model_token_caps": {},
         "default_max_tokens_cap": 0,
+        "active_profile_id": "",
+        "provider_profiles": [],
         "deepseek_upstream_mode": "openai",
         "openai_upstream_mode": "openai",
         "custom_upstream_mode": "openai",
@@ -99,8 +102,11 @@ class Config:
         "custom_model_map": "CUSTOM_MODEL_MAP",
         "model_aliases": "MODEL_ALIASES",
         "model_list_mode": "MODEL_LIST_MODE",
+        "model_menu_strategy": "MODEL_MENU_STRATEGY",
         "model_token_caps": "MODEL_TOKEN_CAPS",
         "default_max_tokens_cap": "DEFAULT_MAX_TOKENS_CAP",
+        "active_profile_id": "ACTIVE_PROFILE_ID",
+        "provider_profiles": "PROVIDER_PROFILES",
         "deepseek_upstream_mode": "DEEPSEEK_UPSTREAM_MODE",
         "openai_upstream_mode": "OPENAI_UPSTREAM_MODE",
         "custom_upstream_mode": "CUSTOM_UPSTREAM_MODE",
@@ -114,7 +120,10 @@ class Config:
         "proxy_host": "PROXY_HOST",
         "proxy_port": "PROXY_PORT",
     }
-    JSON_KEYS = {"deepseek_model_map", "openai_model_map", "custom_model_map", "model_aliases", "model_token_caps"}
+    JSON_KEYS = {
+        "deepseek_model_map", "openai_model_map", "custom_model_map",
+        "model_aliases", "model_token_caps", "provider_profiles",
+    }
 
     def __init__(self):
         self._data = dict(self.DEFAULTS)
@@ -164,6 +173,16 @@ class Config:
             val = d.get(k, "")
             if val and len(val) > 8:
                 d[k] = val[:4] + "•" * (len(val) - 8) + val[-4:]
+        masked_profiles = []
+        for profile in d.get("provider_profiles") or []:
+            if not isinstance(profile, dict):
+                continue
+            item = dict(profile)
+            val = str(item.get("api_key") or "")
+            if val and len(val) > 8:
+                item["api_key"] = val[:4] + "•" * (len(val) - 8) + val[-4:]
+            masked_profiles.append(item)
+        d["provider_profiles"] = masked_profiles
         val = d.get("proxy_auth_token", "")
         if val and len(val) > 8:
             d["proxy_auth_token"] = val[:4] + "•" * (len(val) - 8) + val[-4:]
@@ -196,9 +215,15 @@ class Config:
     @property
     def model_list_mode(self) -> str: return self._data["model_list_mode"]
     @property
+    def model_menu_strategy(self) -> str: return self._data["model_menu_strategy"]
+    @property
     def model_token_caps(self) -> dict: return self._data["model_token_caps"]
     @property
     def default_max_tokens_cap(self) -> int: return int(self._data.get("default_max_tokens_cap") or 0)
+    @property
+    def active_profile_id(self) -> str: return self._data["active_profile_id"]
+    @property
+    def provider_profiles(self) -> list: return self._data["provider_profiles"]
     @property
     def deepseek_upstream_mode(self) -> str: return self._data["deepseek_upstream_mode"]
     @property
@@ -380,8 +405,8 @@ PROVIDER_PRESETS = {
         "upstream_mode": "openai",
         "default_model": "deepseek-chat",
         "model_aliases": [
-            {"id": "byok-model-0001", "display_name": "DeepSeek Chat", "backend": "deepseek", "model": "deepseek-chat"},
-            {"id": "byok-model-0002", "display_name": "DeepSeek Reason", "backend": "deepseek", "model": "deepseek-reasoner"},
+            {"id": "claude-opus-4-8", "display_name": "DeepSeek Chat", "backend": "deepseek", "model": "deepseek-chat"},
+            {"id": "claude-sonnet-5", "display_name": "DeepSeek Reason", "backend": "deepseek", "model": "deepseek-reasoner"},
         ],
     },
     "deepseek_anthropic": {
@@ -391,7 +416,7 @@ PROVIDER_PRESETS = {
         "upstream_mode": "anthropic",
         "default_model": "deepseek-chat",
         "model_aliases": [
-            {"id": "byok-model-0001", "display_name": "DeepSeek Native", "backend": "deepseek", "model": "deepseek-chat"},
+            {"id": "claude-opus-4-8", "display_name": "DeepSeek Native", "backend": "deepseek", "model": "deepseek-chat"},
         ],
     },
     "siliconflow_kimi": {
@@ -401,7 +426,7 @@ PROVIDER_PRESETS = {
         "upstream_mode": "openai",
         "default_model": "Pro/moonshotai/Kimi-K2.6",
         "model_aliases": [
-            {"id": "byok-model-0001", "display_name": "Kimi K2.6 Pro++", "backend": "custom", "model": "Pro/moonshotai/Kimi-K2.6"},
+            {"id": "claude-opus-4-8", "display_name": "Kimi K2.6 Pro++", "backend": "custom", "model": "Pro/moonshotai/Kimi-K2.6"},
         ],
     },
     "dashscope_qwen": {
@@ -411,8 +436,8 @@ PROVIDER_PRESETS = {
         "upstream_mode": "openai",
         "default_model": "qwen-plus",
         "model_aliases": [
-            {"id": "byok-model-0001", "display_name": "Qwen Plus", "backend": "custom", "model": "qwen-plus"},
-            {"id": "byok-model-0002", "display_name": "Qwen Max", "backend": "custom", "model": "qwen-max"},
+            {"id": "claude-opus-4-8", "display_name": "Qwen Plus", "backend": "custom", "model": "qwen-plus"},
+            {"id": "claude-sonnet-5", "display_name": "Qwen Max", "backend": "custom", "model": "qwen-max"},
         ],
     },
     "moonshot_anthropic": {
@@ -422,10 +447,17 @@ PROVIDER_PRESETS = {
         "upstream_mode": "anthropic",
         "default_model": "kimi-k2-0711-preview",
         "model_aliases": [
-            {"id": "byok-model-0001", "display_name": "Moonshot Kimi", "backend": "custom", "model": "kimi-k2-0711-preview"},
+            {"id": "claude-opus-4-8", "display_name": "Moonshot Kimi", "backend": "custom", "model": "kimi-k2-0711-preview"},
         ],
     },
 }
+
+
+CLAUDE_COMPAT_MENU_SLOTS = [
+    {"id": "claude-opus-4-8", "display_name": "Opus Slot"},
+    {"id": "claude-sonnet-5", "display_name": "Sonnet Slot"},
+    {"id": "claude-sonnet-4-6", "display_name": "Sonnet Slot 2"},
+]
 
 
 BUILTIN_COMPAT_MODELS = [
@@ -436,6 +468,180 @@ BUILTIN_COMPAT_MODELS = [
     {"id": "deepseek-reasoner", "type": "model", "display_name": "DeepSeek Reasoner"},
     {"id": "gpt-4o", "type": "model", "display_name": "GPT-4o"},
 ]
+
+
+KNOWN_MODEL_COMPAT_SUFFIXES = [
+    "/api/claudecode",
+    "/api/anthropic",
+    "/apps/anthropic",
+    "/api/coding",
+    "/claudecode",
+    "/anthropic",
+    "/step_plan",
+    "/coding",
+    "/claude",
+]
+
+
+def model_menu_strategy(value: str) -> str:
+    value = (value or "claude_compatible").strip().lower().replace("-", "_")
+    if value in {"real", "real_ids", "native", "provider_ids"}:
+        return "real_ids"
+    if value in {"custom", "custom_ids", "byok"}:
+        return "custom_ids"
+    return "claude_compatible"
+
+
+def display_name_for_model(model: str) -> str:
+    text = str(model or "").strip()
+    if not text:
+        return "Provider Model"
+    lower = text.lower()
+    if "kimi-k2.6" in lower:
+        return "Kimi K2.6 Pro++"
+    if "deepseek-reasoner" in lower:
+        return "DeepSeek Reasoner"
+    if "deepseek" in lower and "chat" in lower:
+        return "DeepSeek Chat"
+    if "/" in text:
+        return text.rsplit("/", 1)[-1]
+    return text
+
+
+def normalize_model_entries(raw_models) -> list[dict]:
+    if isinstance(raw_models, str):
+        raw_models = [m.strip() for m in raw_models.splitlines() if m.strip()]
+    if not isinstance(raw_models, list):
+        return []
+    out = []
+    for item in raw_models:
+        if isinstance(item, str):
+            model = item.strip()
+            display_name = display_name_for_model(model)
+            owned_by = ""
+        elif isinstance(item, dict):
+            model = str(item.get("model") or item.get("id") or item.get("name") or "").strip()
+            display_name = str(item.get("display_name") or item.get("label") or item.get("name") or display_name_for_model(model)).strip()
+            owned_by = str(item.get("owned_by") or item.get("ownedBy") or "").strip()
+        else:
+            continue
+        if not model:
+            continue
+        out.append({"id": model, "model": model, "display_name": display_name, "owned_by": owned_by})
+    return out
+
+
+def build_aliases_from_models(raw_models, backend: str, strategy: str = "claude_compatible") -> list[dict]:
+    models = normalize_model_entries(raw_models)
+    backend = (backend or "custom").strip().lower()
+    if backend not in {"deepseek", "openai", "custom"}:
+        backend = "custom"
+    strategy = model_menu_strategy(strategy)
+    aliases = []
+    for idx, item in enumerate(models[:len(CLAUDE_COMPAT_MENU_SLOTS)]):
+        if strategy == "real_ids":
+            alias_id = item["model"]
+        elif strategy == "custom_ids":
+            alias_id = f"byok-model-{idx + 1:04d}" if idx < 2 else f"byok-model-{idx + 1:06d}"
+        else:
+            alias_id = CLAUDE_COMPAT_MENU_SLOTS[idx]["id"]
+        aliases.append({
+            "id": alias_id,
+            "display_name": item["display_name"],
+            "backend": backend,
+            "model": item["model"],
+        })
+    return aliases
+
+
+def config_key_for_backend(backend: str) -> str:
+    backend = (backend or "").lower()
+    if backend == "deepseek":
+        return "deepseek_api_key"
+    if backend == "openai":
+        return "openai_api_key"
+    return "custom_api_key"
+
+
+def config_base_for_backend(backend: str) -> str:
+    backend = (backend or "").lower()
+    if backend == "deepseek":
+        return config.deepseek_base_url
+    if backend == "openai":
+        return config.openai_base_url
+    return config.custom_base_url
+
+
+def config_mode_for_backend(backend: str) -> str:
+    backend = (backend or "").lower()
+    if backend == "deepseek":
+        return config.deepseek_upstream_mode
+    if backend == "openai":
+        return config.openai_upstream_mode
+    return config.custom_upstream_mode
+
+
+def configured_api_key_for_backend(backend: str) -> str:
+    return str(config.get(config_key_for_backend(backend)) or "")
+
+
+def is_masked_secret(value: str) -> bool:
+    return "•" in str(value or "")
+
+
+def strip_known_model_compat_suffix(base_url: str) -> Optional[str]:
+    trimmed = (base_url or "").rstrip("/")
+    for suffix in KNOWN_MODEL_COMPAT_SUFFIXES:
+        if trimmed.endswith(suffix):
+            return trimmed[: -len(suffix)]
+    return None
+
+
+def ends_with_version_segment(url: str) -> bool:
+    last = (url or "").rstrip("/").rsplit("/", 1)[-1]
+    return bool(re.fullmatch(r"v\d+", last))
+
+
+def build_models_url_candidates(base_url: str, is_full_url: bool = False, models_url: str = "") -> list[str]:
+    override = (models_url or "").strip()
+    if override:
+        return [override]
+    trimmed = (base_url or "").strip().rstrip("/")
+    if not trimmed:
+        raise ValueError("Base URL is empty")
+
+    candidates: list[str] = []
+    if is_full_url:
+        marker = "/v1/"
+        if marker in trimmed:
+            candidates.append(f"{trimmed.split(marker, 1)[0]}/v1/models")
+        else:
+            root = trimmed.rsplit("/", 1)[0]
+            if "://" in root and len(root) > root.find("://") + 3:
+                candidates.append(f"{root}/v1/models")
+        if not candidates:
+            raise ValueError("Cannot derive models endpoint from full URL")
+        return candidates
+
+    if ends_with_version_segment(trimmed):
+        candidates.append(f"{trimmed}/models")
+        if not trimmed.endswith("/v1"):
+            candidates.append(f"{trimmed}/v1/models")
+    else:
+        candidates.append(f"{trimmed}/v1/models")
+
+    stripped = strip_known_model_compat_suffix(trimmed)
+    if stripped:
+        root = stripped.rstrip("/")
+        if root and "://" in root:
+            candidates.append(f"{root}/v1/models")
+            candidates.append(f"{root}/models")
+
+    unique = []
+    for url in candidates:
+        if url not in unique:
+            unique.append(url)
+    return unique
 
 
 def normalized_model_aliases(raw_aliases) -> list[dict]:
@@ -1958,8 +2164,9 @@ async def api_update_config(request: Request):
         "deepseek_base_url", "openai_base_url", "custom_base_url",
         "default_backend", "force_model",
         "deepseek_model_map", "openai_model_map", "custom_model_map",
-        "model_aliases", "model_list_mode",
+        "model_aliases", "model_list_mode", "model_menu_strategy",
         "model_token_caps", "default_max_tokens_cap",
+        "active_profile_id", "provider_profiles",
         "deepseek_upstream_mode", "openai_upstream_mode", "custom_upstream_mode",
         "proxy_auth_token", "proxy_auth_mode",
         "deepseek_model_pattern", "openai_model_pattern", "custom_model_pattern",
@@ -1981,6 +2188,263 @@ async def api_update_config(request: Request):
 @app.get("/api/provider-presets")
 async def api_provider_presets():
     return {"presets": PROVIDER_PRESETS}
+
+
+async def fetch_models_from_upstream(
+    base_url: str,
+    api_key: str,
+    upstream_mode: str = "openai",
+    is_full_url: bool = False,
+    models_url: str = "",
+) -> dict:
+    candidates = build_models_url_candidates(base_url, is_full_url, models_url)
+    mode = normalize_upstream_mode(upstream_mode)
+    auth_variants = [
+        {"Authorization": f"Bearer {api_key}"},
+        {"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+    ]
+    if mode == "anthropic":
+        auth_variants.reverse()
+    last_error = ""
+    attempted = []
+    async with httpx.AsyncClient(timeout=15, trust_env=False) as c:
+        for url in candidates:
+            for headers in auth_variants:
+                attempted.append(url)
+                try:
+                    resp = await c.get(url, headers={**headers, "Accept": "application/json"})
+                except Exception as e:
+                    return {"ok": False, "error": f"Request failed: {e}", "attempted": attempted}
+                if resp.status_code == 200:
+                    try:
+                        data = resp.json()
+                    except Exception as e:
+                        return {"ok": False, "error": f"Failed to parse response: {e}", "attempted": attempted}
+                    models = normalize_model_entries(data.get("data") or [])
+                    models.sort(key=lambda x: x["id"])
+                    return {"ok": True, "models": models, "attempted": attempted}
+                text = resp.text[:512]
+                last_error = f"HTTP {resp.status_code}: {text}"
+                if resp.status_code not in {401, 403, 404, 405}:
+                    return {"ok": False, "error": last_error, "attempted": attempted}
+    return {"ok": False, "error": last_error or "No models endpoint succeeded", "attempted": attempted}
+
+
+@app.post("/api/fetch-models")
+async def api_fetch_models(request: Request):
+    body, json_error = await read_json_object(request)
+    if json_error:
+        return {"ok": False, "error": "Request body must be valid JSON."}
+    backend = str(body.get("provider") or body.get("backend") or config.default_backend or "custom").lower()
+    if backend not in {"deepseek", "openai", "custom"}:
+        backend = "custom"
+    api_key = str(body.get("api_key") or "").strip()
+    if not api_key or is_masked_secret(api_key):
+        api_key = configured_api_key_for_backend(backend)
+    base_url = str(body.get("base_url") or config_base_for_backend(backend) or "").strip()
+    upstream_mode = str(body.get("upstream_mode") or config_mode_for_backend(backend) or "openai")
+    models_url = str(body.get("models_url") or "").strip()
+    is_full_url = bool(body.get("is_full_url") or False)
+    if not api_key:
+        return {"ok": False, "error": f"No API key configured for backend '{backend}'."}
+    if not base_url:
+        return {"ok": False, "error": "Base URL is required."}
+    result = await fetch_models_from_upstream(base_url, api_key, upstream_mode, is_full_url, models_url)
+    result["backend"] = backend
+    return result
+
+
+@app.post("/api/apply-models")
+async def api_apply_models(request: Request):
+    body, json_error = await read_json_object(request)
+    if json_error:
+        return {"ok": False, "error": "Request body must be valid JSON."}
+    backend = str(body.get("provider") or body.get("backend") or config.default_backend or "custom").lower()
+    if backend not in {"deepseek", "openai", "custom"}:
+        backend = "custom"
+    models = normalize_model_entries(body.get("models") or [])
+    if not models:
+        return {"ok": False, "error": "Select at least one model."}
+    strategy = model_menu_strategy(body.get("model_menu_strategy") or config.model_menu_strategy)
+    aliases = build_aliases_from_models(models, backend, strategy)
+    if not aliases:
+        return {"ok": False, "error": "Could not build model aliases."}
+    first_model = aliases[0]["model"]
+    update = {
+        "default_backend": backend,
+        "force_model": first_model,
+        "model_aliases": aliases,
+        "model_list_mode": "aliases",
+        "model_menu_strategy": strategy,
+    }
+    if isinstance(body.get("model_token_caps"), dict):
+        update["model_token_caps"] = body["model_token_caps"]
+    config.update(update)
+    return {"ok": True, "aliases": aliases, "force_model": first_model, "model_menu_strategy": strategy}
+
+
+def normalize_provider_profile(raw: dict) -> dict:
+    if not isinstance(raw, dict):
+        raise ValueError("Profile must be an object")
+    profile_id = str(raw.get("id") or "").strip()
+    if not profile_id:
+        profile_id = "profile-" + uuid.uuid4().hex[:8]
+    backend = str(raw.get("backend") or raw.get("provider") or "custom").strip().lower()
+    if backend not in {"deepseek", "openai", "custom"}:
+        backend = "custom"
+    models = normalize_model_entries(raw.get("models") or raw.get("model_aliases") or [])
+    if not models and raw.get("default_model"):
+        models = normalize_model_entries([str(raw["default_model"])])
+    default_model = str(raw.get("default_model") or (models[0]["model"] if models else "")).strip()
+    return {
+        "id": profile_id,
+        "label": str(raw.get("label") or raw.get("name") or profile_id).strip(),
+        "backend": backend,
+        "base_url": str(raw.get("base_url") or "").strip(),
+        "upstream_mode": normalize_upstream_mode(raw.get("upstream_mode") or "openai"),
+        "api_key": str(raw.get("api_key") or "").strip(),
+        "default_model": default_model,
+        "models": models,
+        "model_menu_strategy": model_menu_strategy(raw.get("model_menu_strategy") or "claude_compatible"),
+        "inline_image_policy": str(raw.get("inline_image_policy") or "auto").strip(),
+        "models_url": str(raw.get("models_url") or "").strip(),
+        "is_full_url": bool(raw.get("is_full_url") or False),
+        "model_token_caps": raw.get("model_token_caps") if isinstance(raw.get("model_token_caps"), dict) else {},
+    }
+
+
+def profile_to_config_update(profile: dict) -> dict:
+    backend = profile["backend"]
+    models = profile.get("models") or ([profile["default_model"]] if profile.get("default_model") else [])
+    aliases = build_aliases_from_models(models, backend, profile.get("model_menu_strategy"))
+    default_model = profile.get("default_model") or (aliases[0]["model"] if aliases else "")
+    update = {
+        "active_profile_id": profile["id"],
+        "default_backend": backend,
+        "force_model": default_model,
+        "model_aliases": aliases,
+        "model_list_mode": "aliases",
+        "model_menu_strategy": model_menu_strategy(profile.get("model_menu_strategy")),
+        "inline_image_policy": profile.get("inline_image_policy") or "auto",
+        "model_token_caps": profile.get("model_token_caps") or {},
+    }
+    if backend == "deepseek":
+        update["deepseek_base_url"] = profile.get("base_url") or "https://api.deepseek.com"
+        update["deepseek_upstream_mode"] = profile.get("upstream_mode") or "openai"
+        if profile.get("api_key") and not is_masked_secret(profile["api_key"]):
+            update["deepseek_api_key"] = profile["api_key"]
+    elif backend == "openai":
+        update["openai_base_url"] = profile.get("base_url") or "https://api.openai.com"
+        update["openai_upstream_mode"] = profile.get("upstream_mode") or "openai"
+        if profile.get("api_key") and not is_masked_secret(profile["api_key"]):
+            update["openai_api_key"] = profile["api_key"]
+    else:
+        update["custom_base_url"] = profile.get("base_url") or ""
+        update["custom_upstream_mode"] = profile.get("upstream_mode") or "openai"
+        if profile.get("api_key") and not is_masked_secret(profile["api_key"]):
+            update["custom_api_key"] = profile["api_key"]
+    return update
+
+
+@app.get("/api/provider-profiles")
+async def api_provider_profiles():
+    profiles = []
+    for preset_id, preset in PROVIDER_PRESETS.items():
+        profiles.append({
+            "id": preset_id,
+            "label": preset.get("label") or preset_id,
+            "backend": preset.get("backend"),
+            "base_url": preset.get("base_url"),
+            "upstream_mode": preset.get("upstream_mode"),
+            "default_model": preset.get("default_model"),
+            "models": normalize_model_entries([
+                {"id": a.get("model"), "display_name": a.get("display_name")}
+                for a in preset.get("model_aliases", [])
+            ]),
+            "model_menu_strategy": "claude_compatible",
+            "builtin": True,
+        })
+    for profile in config.public_dict().get("provider_profiles") or []:
+        profile = dict(profile)
+        profile["builtin"] = False
+        profiles.append(profile)
+    return {"profiles": profiles, "active_profile_id": config.active_profile_id}
+
+
+@app.post("/api/provider-profiles")
+async def api_save_provider_profile(request: Request):
+    body, json_error = await read_json_object(request)
+    if json_error:
+        return {"ok": False, "error": "Request body must be valid JSON."}
+    try:
+        profile = normalize_provider_profile(body)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    profiles = [
+        p for p in (config.provider_profiles or [])
+        if isinstance(p, dict) and p.get("id") != profile["id"]
+    ]
+    # Keep an existing secret when the dashboard posts back a masked placeholder.
+    existing = next((p for p in (config.provider_profiles or []) if isinstance(p, dict) and p.get("id") == profile["id"]), None)
+    if existing and is_masked_secret(profile.get("api_key")):
+        profile["api_key"] = existing.get("api_key", "")
+    profiles.append(profile)
+    config.update({"provider_profiles": profiles})
+    return {"ok": True, "profile": {k: ("configured" if k == "api_key" and v else v) for k, v in profile.items()}}
+
+
+@app.delete("/api/provider-profiles/{profile_id}")
+async def api_delete_provider_profile(profile_id: str):
+    profiles = [
+        p for p in (config.provider_profiles or [])
+        if isinstance(p, dict) and p.get("id") != profile_id
+    ]
+    update = {"provider_profiles": profiles}
+    if config.active_profile_id == profile_id:
+        update["active_profile_id"] = ""
+    config.update(update)
+    return {"ok": True}
+
+
+@app.post("/api/provider-profiles/{profile_id}/activate")
+async def api_activate_provider_profile(profile_id: str):
+    preset = PROVIDER_PRESETS.get(profile_id)
+    if preset:
+        profile = normalize_provider_profile({
+            "id": profile_id,
+            "label": preset.get("label") or profile_id,
+            "backend": preset.get("backend"),
+            "base_url": preset.get("base_url"),
+            "upstream_mode": preset.get("upstream_mode"),
+            "default_model": preset.get("default_model"),
+            "models": [
+                {"id": a.get("model"), "display_name": a.get("display_name")}
+                for a in preset.get("model_aliases", [])
+            ],
+            "model_menu_strategy": "claude_compatible",
+        })
+    else:
+        found = next((p for p in (config.provider_profiles or []) if isinstance(p, dict) and p.get("id") == profile_id), None)
+        if not found:
+            return {"ok": False, "error": "Profile not found"}
+        profile = normalize_provider_profile(found)
+    config.update(profile_to_config_update(profile))
+    return {"ok": True, "active_profile_id": profile_id}
+
+
+@app.post("/api/patch-model-menu")
+async def api_patch_model_menu():
+    try:
+        result = subprocess.run(
+            ["bash", str(PROXY_DIR / "scripts" / "patch-daemon-models.sh")],
+            capture_output=True, text=True, timeout=20,
+            env={**os.environ, "PYTHON": sys.executable},
+        )
+        if result.returncode == 0:
+            return {"ok": True, "output": result.stdout.strip().splitlines()[-8:]}
+        return {"ok": False, "error": (result.stderr or result.stdout)[-1200:]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @app.post("/api/test-backend")
@@ -2204,7 +2668,10 @@ async def health():
         "default_backend": config.default_backend,
         "force_model": config.force_model or "(none)",
         "model_list_mode": config.model_list_mode,
+        "model_menu_strategy": config.model_menu_strategy,
         "model_aliases": len(normalized_model_aliases(config.model_aliases)),
+        "active_profile_id": config.active_profile_id,
+        "provider_profiles": len(config.provider_profiles or []),
         "upstream_modes": {
             "deepseek": normalize_upstream_mode(config.deepseek_upstream_mode),
             "openai": normalize_upstream_mode(config.openai_upstream_mode),

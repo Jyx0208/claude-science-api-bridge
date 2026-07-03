@@ -39,21 +39,24 @@ slots = [
         "slot": 1,
         "original_id": "claude-opus-4-8",
         "original_name": "Claude Opus 4.8",
-        "alias_id": "byok-model-0001",
+        "alias_id": "claude-opus-4-8",
+        "custom_alias_id": "byok-model-0001",
         "default_name": "Kimi K2.6 Pro++",
     },
     {
         "slot": 2,
         "original_id": "claude-sonnet-5",
         "original_name": "Claude Sonnet 5",
-        "alias_id": "byok-model-0002",
+        "alias_id": "claude-sonnet-5",
+        "custom_alias_id": "byok-model-0002",
         "default_name": "BYOK Model 0002",
     },
     {
         "slot": 3,
         "original_id": "claude-sonnet-4-6",
         "original_name": "Claude Sonnet 4.6",
-        "alias_id": "byok-model-000003",
+        "alias_id": "claude-sonnet-4-6",
+        "custom_alias_id": "byok-model-000003",
         "default_name": "BYOK Model 000003",
     },
 ]
@@ -144,6 +147,13 @@ configured = normalize_aliases(config.get("model_aliases"))
 default_backend = ascii_clean(config.get("default_backend")).lower() or "custom"
 if default_backend not in {"deepseek", "openai", "custom"}:
     default_backend = "custom"
+menu_strategy = ascii_clean(config.get("model_menu_strategy")).lower().replace("-", "_")
+if menu_strategy in {"custom", "custom_ids", "byok"}:
+    menu_strategy = "custom_ids"
+elif menu_strategy in {"real", "real_ids", "native", "provider_ids"}:
+    menu_strategy = "real_ids"
+else:
+    menu_strategy = "claude_compatible"
 default_model = ascii_clean(config.get("force_model"))
 if not default_model:
     for key in ("custom_model_map", "deepseek_model_map", "openai_model_map"):
@@ -162,8 +172,14 @@ seed = configured[0] if configured else {
 aliases = []
 for idx, slot in enumerate(slots):
     source = configured[idx] if idx < len(configured) else seed
+    if menu_strategy == "custom_ids":
+        alias_id = source.get("id") or slot["custom_alias_id"]
+    elif menu_strategy == "real_ids":
+        alias_id = source.get("model") or source.get("id") or slot["custom_alias_id"]
+    else:
+        alias_id = slot["alias_id"]
     aliases.append({
-        "id": slot["alias_id"],
+        "id": alias_id,
         "backend": source.get("backend") or default_backend,
         "model": source.get("model") or default_model,
         "display_name": source.get("display_name") or slot["default_name"],
@@ -175,6 +191,9 @@ if config.get("model_aliases") != aliases:
     changed_config = True
 if config.get("model_list_mode") != "aliases":
     config["model_list_mode"] = "aliases"
+    changed_config = True
+if config.get("model_menu_strategy") != menu_strategy:
+    config["model_menu_strategy"] = menu_strategy
     changed_config = True
 if changed_config:
     config_file.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n")

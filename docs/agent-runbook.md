@@ -62,6 +62,8 @@ First decide the upstream protocol:
 
 Dashboard Provider presets can fill base URL, upstream mode, default model, and model aliases. Presets never fill API keys.
 
+Prefer Dashboard or `/api/fetch-models` to fetch the provider's real `/v1/models` list before finalizing model aliases. The model fetcher follows the same candidate strategy as cc-switch: try `/v1/models`, versioned `/models`, and variants after stripping known Anthropic-compatible suffixes such as `/anthropic`, `/api/anthropic`, `/apps/anthropic`, `/api/coding`, and `/coding`.
+
 Minimum DeepSeek config:
 
 ```json
@@ -84,13 +86,14 @@ Generic OpenAI-compatible provider:
   "force_model": "provider-model-name",
   "model_aliases": [
     {
-      "id": "byok-model-0001",
+      "id": "claude-opus-4-8",
       "display_name": "Provider Model",
       "backend": "custom",
       "model": "provider-model-name"
     }
   ],
   "model_list_mode": "aliases",
+  "model_menu_strategy": "claude_compatible",
   "inline_image_policy": "auto"
 }
 ```
@@ -108,13 +111,14 @@ For SiliconFlow Kimi:
   "force_model": "Pro/moonshotai/Kimi-K2.6",
   "model_aliases": [
     {
-      "id": "byok-model-0001",
+      "id": "claude-opus-4-8",
       "display_name": "Kimi K2.6 Pro++",
       "backend": "custom",
       "model": "Pro/moonshotai/Kimi-K2.6"
     }
   ],
   "model_list_mode": "aliases",
+  "model_menu_strategy": "claude_compatible",
   "inline_image_policy": "preserve",
   "reasoning_content_policy": "never"
 }
@@ -160,12 +164,13 @@ Use `model_aliases` for the proxy and `scripts/patch-daemon-models.sh` for the l
 Expected:
 
 - `config.json` contains `model_list_mode=aliases`.
-- `config.json` contains aliases such as `byok-model-0001`.
+- `config.json` contains `model_menu_strategy=claude_compatible`, unless the user explicitly wants raw third-party model IDs.
+- `config.json` contains aliases such as `claude-opus-4-8` with third-party display names.
 - `/v1/models` returns the alias display names.
 - The daemon binary still passes its executable check.
 
 The model patch only edits `~/.claude-science/bin/claude-science`, not the app bundle in `/Applications`.
-Alias routing has priority over `force_model`, so a selected BYOK alias maps to its own real backend model.
+Alias routing has priority over `force_model`, so a selected Claude-compatible menu slot maps to its own real backend model.
 
 ## Phase 2.6: Optional Path-Secret
 

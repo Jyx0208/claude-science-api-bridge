@@ -183,12 +183,13 @@ display_name = os.environ["DISPLAY_NAME"]
 data["default_backend"] = backend
 data["force_model"] = model
 data["model_list_mode"] = "aliases"
+data["model_menu_strategy"] = "claude_compatible"
 data["reasoning_content_policy"] = "never"
 data["inline_image_policy"] = inline_policy
 data["model_aliases"] = [
-    {"id": "byok-model-0001", "display_name": display_name, "backend": backend, "model": model},
-    {"id": "byok-model-0002", "display_name": "BYOK Model 0002", "backend": backend, "model": model},
-    {"id": "byok-model-000003", "display_name": "BYOK Model 000003", "backend": backend, "model": model},
+    {"id": "claude-opus-4-8", "display_name": display_name, "backend": backend, "model": model},
+    {"id": "claude-sonnet-5", "display_name": display_name, "backend": backend, "model": model},
+    {"id": "claude-sonnet-4-6", "display_name": display_name, "backend": backend, "model": model},
 ]
 if backend == "deepseek":
     data["deepseek_api_key"] = api_key

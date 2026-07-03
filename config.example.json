@@ -17,15 +17,18 @@
   "custom_model_map": {},
   "model_aliases": [
     {
-      "id": "byok-model-0001",
+      "id": "claude-opus-4-8",
       "display_name": "DeepSeek Chat",
       "backend": "deepseek",
       "model": "deepseek-chat"
     }
   ],
   "model_list_mode": "aliases",
+  "model_menu_strategy": "claude_compatible",
   "model_token_caps": {},
   "default_max_tokens_cap": 0,
+  "active_profile_id": "",
+  "provider_profiles": [],
   "deepseek_upstream_mode": "openai",
   "openai_upstream_mode": "openai",
   "custom_upstream_mode": "openai",
