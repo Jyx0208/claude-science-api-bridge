@@ -4,6 +4,14 @@
 
 最新 macOS 一键安装包：[`Claude Science API Bridge.dmg`](https://github.com/Jyx0208/claude-science-api-bridge/releases/latest)
 
+最省事的安装方式：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Jyx0208/claude-science-api-bridge/main/scripts/install-macos-app.sh | bash
+```
+
+这个脚本会下载最新 DMG，复制 App 到 `~/Applications`，移除 Apple quarantine 标记并打开 App。它不会修改 Clash、VPN、TUN、DNS、系统代理、`/etc/hosts`、系统证书或 443 端口。
+
 这个项目不只是一个代理程序，也是一份给 AI agent 读取的操作说明书。把仓库交给 Codex、Claude Code 或其他本地 agent 后，它可以先读 `AGENTS.md` 和 `docs/agent-runbook.md`，再按步骤完成诊断、安装、配置和验证。
 
 ## 功能
@@ -39,14 +47,16 @@
 
 ## 用户怎么使用
 
-最简单的方式是下载 macOS 发布包：
+也可以手动下载 macOS 发布包：
 
 1. 下载 `Claude Science API Bridge.dmg`
 2. 双击打开 `Claude Science API Bridge.app`
 3. 按弹窗选择 provider，输入自己的 API key
 4. App 会自动安装本地代理、打开 Dashboard，并启动 Claude Science
 
-如果首次打开被 macOS 拦截，请在 Finder 里右键 App，选择“打开”。
+如果首次打开被 macOS 拦截，请优先使用上面的一行安装命令，或者在 Finder 里右键 App，选择“打开”。
+
+当前公开 DMG 使用 ad-hoc 签名，未经过 Apple Developer ID 公证，所以 macOS 可能显示“Apple 无法验证是否包含恶意软件”。这不是检测到恶意软件，而是 Apple 没有给这个包签发公证票据。临时使用可右键打开；正式发布给更多用户前，应使用 `./scripts/notarize-macos-release.sh` 做 Developer ID 签名和 Apple notarization。
 
 Agent 安装方式也仍然支持。推荐做法是：把下面这段 prompt 复制给你的本地 agent，让 agent 阅读仓库、诊断环境、安装、配置并验证。
 
@@ -352,6 +362,14 @@ curl -sS http://127.0.0.1:9876/api/recent-requests
 ```bash
 ./scripts/build-macos-release.sh
 ./scripts/smoke-test-release-package.sh
+```
+
+如果有 Apple Developer ID 证书和 notarytool 凭证，可生成已公证 DMG：
+
+```bash
+DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (TEAMID)" \
+NOTARYTOOL_PROFILE="your-notarytool-profile" \
+./scripts/notarize-macos-release.sh
 ```
 
 产物位于：

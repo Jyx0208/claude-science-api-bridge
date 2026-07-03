@@ -60,6 +60,22 @@ API key 只写入本机 `~/.claude-science/proxy/config.json`，权限为 `0600`
 
 ## 用户说明
 
+最便捷安装方式：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Jyx0208/claude-science-api-bridge/main/scripts/install-macos-app.sh | bash
+```
+
+这个脚本会：
+
+1. 下载 latest release 的 DMG
+2. 挂载 DMG
+3. 复制 App 到 `~/Applications`
+4. 移除 `com.apple.quarantine` 标记
+5. 打开 App
+
+这能绕过未公证包的 Gatekeeper 首次打开阻塞，但前提是用户信任本项目源码和 GitHub Release。
+
 首次打开未公证 app 时，macOS 可能提示无法验证开发者。用户可以：
 
 1. 在 Finder 里右键 `Claude Science API Bridge.app`
@@ -67,6 +83,49 @@ API key 只写入本机 `~/.claude-science/proxy/config.json`，权限为 `0600`
 3. 在弹窗中再次点击“打开”
 
 这是未做 Apple 公证的开源发布包常见行为。当前构建脚本只做 ad-hoc 签名。
+
+另一种本机临时方式是移除 quarantine 标记：
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Claude Science API Bridge.app"
+```
+
+只应对自己信任、来源明确的包这样做。
+
+## 正式公证发布
+
+要消除“Apple 无法验证是否包含恶意软件”这类 Gatekeeper 警告，需要 Apple Developer Program 账号、Developer ID Application 证书，以及 Apple notarytool 凭证。
+
+Apple 官方文档说明，分发到 Mac App Store 之外的 Developer ID 软件通常需要 notarization；notarytool 是当前推荐的公证工具。参考：
+
+- [Notarizing macOS software before distribution](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
+- [TN3147: Migrating to the latest notarization tool](https://developer.apple.com/documentation/technotes/tn3147-migrating-to-the-latest-notarization-tool)
+
+推荐先把 notarytool 凭证保存到 Keychain：
+
+```bash
+xcrun notarytool store-credentials "claude-science-api-bridge-notary" \
+  --apple-id "you@example.com" \
+  --team-id "TEAMID" \
+  --password "app-specific-password"
+```
+
+然后执行：
+
+```bash
+DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (TEAMID)" \
+NOTARYTOOL_PROFILE="claude-science-api-bridge-notary" \
+./scripts/notarize-macos-release.sh
+```
+
+脚本会：
+
+1. 重新构建 `.app`
+2. 用 Developer ID 和 hardened runtime 签名 `.app`
+3. 重新生成并签名 `.dmg`
+4. 用 `xcrun notarytool submit --wait` 提交 Apple 公证
+5. 用 `xcrun stapler staple` 把票据 stapled 到 DMG
+6. 用 `spctl` 做 Gatekeeper 评估
 
 ## 维护者发布前检查
 

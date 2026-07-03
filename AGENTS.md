@@ -50,6 +50,7 @@ The safe path is:
 - `scripts/start-claude-science.sh`: refreshes token, reapplies daemon patches, and restarts the app.
 - `scripts/verify-proxy.sh`: end-to-end proxy verification after provider config.
 - `scripts/build-macos-release.sh`: builds the one-click macOS `.app` and `.dmg`.
+- `scripts/install-macos-app.sh`: downloads latest DMG, installs the app to `~/Applications`, removes quarantine, and opens it.
 - `scripts/smoke-test-release-package.sh`: tests the `.app` launcher in a temporary HOME without touching the user's real config.
 - `scripts/uninstall.sh`: removes LaunchAgent and launchctl env only.
 - `packaging/macos/`: app launcher and release packaging scripts.
