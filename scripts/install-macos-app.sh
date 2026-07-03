@@ -34,7 +34,7 @@ echo "Downloading: $DMG_URL"
 curl -fL --retry 3 --connect-timeout 15 "$DMG_URL" -o "$DMG_PATH"
 
 echo "Mounting DMG..."
-MOUNT_POINT="$(hdiutil attach "$DMG_PATH" -nobrowse -quiet | awk '/\\/Volumes\\// {print substr($0, index($0, "/Volumes/")); exit}')"
+MOUNT_POINT="$(hdiutil attach "$DMG_PATH" -nobrowse | sed -n 's#.*\(/Volumes/.*\)#\1#p' | head -1)"
 if [ -z "$MOUNT_POINT" ] || [ ! -d "$MOUNT_POINT" ]; then
   echo "Could not determine mounted DMG volume." >&2
   exit 1
