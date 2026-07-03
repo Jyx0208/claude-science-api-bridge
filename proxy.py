@@ -2548,6 +2548,11 @@ async def oauth_mock(request: Request, path: str):
     return JSONResponse(fake_token_response())
 
 
+@app.api_route("/oauth/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def root_oauth_mock(request: Request, path: str):
+    return JSONResponse(fake_token_response())
+
+
 @app.get("/v1/userinfo")
 @app.get("/v1/me")
 @app.get("/v1/user")

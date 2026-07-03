@@ -172,6 +172,18 @@ def test_provider_presets_include_protocol_modes():
     assert presets["openai"]["inline_image_policy"] == "preserve"
 
 
+def test_auth_mocks_cover_claude_ai_profile_and_oauth_authorize():
+    client = TestClient(proxy.app)
+
+    profile = client.get("/api/oauth/profile")
+    authorize = client.get("/oauth/authorize")
+
+    assert profile.status_code == 200
+    assert profile.json()["organization"]["uuid"] == proxy.FAKE_ORG_UUID
+    assert authorize.status_code == 200
+    assert authorize.json()["access_token"] == proxy.FAKE_ACCESS_TOKEN
+
+
 def test_model_capability_detection_recognizes_current_vision_models():
     assert proxy.model_supports_vision_input("Pro/moonshotai/Kimi-K2.6")
     assert proxy.model_supports_vision_input("Qwen/Qwen3-VL-32B-Instruct")

@@ -33,6 +33,10 @@ backup = target.with_name(target.name + ".byok-auth-original")
 
 pairs = [
     (
+        [b"https://claude.ai"],
+        f"http://127.1:{port}".encode(),
+    ),
+    (
         [b"https://api.anthropic.com"],
         f"http://127.00.00.001:{port}".encode(),
     ),

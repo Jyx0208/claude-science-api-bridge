@@ -111,8 +111,7 @@ Try:
 
 ```bash
 python3 setup-token.py
-pkill -f "claude-science serve" 2>/dev/null || true
-open -a "Claude Science"
+./scripts/start-claude-science.sh
 ```
 
 Then inspect:
@@ -120,6 +119,49 @@ Then inspect:
 ```bash
 curl -sS http://127.0.0.1:9876/api/recent-requests
 ```
+
+Expected auth/profile requests after startup:
+
+- `GET /api/oauth/profile` returns 200
+- `GET /api/oauth/usage` returns 200
+- organization bootstrap/plugin/skill paths under `/api/oauth/organizations/...` return 200
+
+If logs still show `claudeAiFetch: 401 and refresh failed` or `mcp.bootstrap: org unresolved`, rerun:
+
+```bash
+./scripts/patch-daemon-auth.sh
+./scripts/start-claude-science.sh
+```
+
+The auth patch must rewrite both `https://api.anthropic.com` and `https://claude.ai` to the local bridge. Do not solve this by changing Clash, DNS, TUN, `/etc/hosts`, system proxy, certificates, or port 443.
+
+## Dashboard Shows Internal Server Error Or Database Banner
+
+Claude Science may show:
+
+```text
+Claude Science is hitting repeated database errors...
+Failed to load dashboard
+Internal server error
+```
+
+First separate old log noise from the current daemon:
+
+```bash
+./scripts/doctor.sh
+sqlite3 ~/.claude-science/operon-cli.db 'PRAGMA integrity_check;'
+sqlite3 ~/.claude-science/operon-cli.db 'PRAGMA quick_check;'
+```
+
+Then restart cleanly:
+
+```bash
+mkdir -p ~/.claude-science/backups
+cp -p ~/.claude-science/operon*.db* ~/.claude-science/backups/ 2>/dev/null || true
+./scripts/start-claude-science.sh
+```
+
+After restart, inspect only the new daemon PID in `~/.claude-science/logs/server-*.log`. Historical `SQLiteError: file is not a database` lines from older PIDs do not prove the current database is still broken. If the same error returns under the new PID even though `integrity_check` is `ok`, stop Claude Science before any database repair and keep the backup.
 
 ## Model Picker Still Shows Opus / Sonnet / Haiku
 
