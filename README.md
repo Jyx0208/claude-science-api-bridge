@@ -1,8 +1,16 @@
 # Claude Science API Bridge
 
-让 Claude Science 安全接入 DeepSeek、OpenAI、硅基流动 Kimi 与任意 OpenAI 兼容第三方 API 的本地代理和 agent 配置手册。
+_让 Claude Science 使用 DeepSeek、OpenAI、硅基流动 Kimi 以及任意 OpenAI 兼容第三方 API 的本地桥接工具。_
 
-最新 macOS 一键安装包：[`Claude Science API Bridge.dmg`](https://github.com/Jyx0208/claude-science-api-bridge/releases/latest)
+[最新 macOS DMG](https://github.com/Jyx0208/claude-science-api-bridge/releases/latest) · [Linux 说明](docs/linux.md) · [Agent 手册](AGENTS.md) · [故障排查](docs/troubleshooting.md)
+
+Claude Science API Bridge 是一个运行在本机的 Anthropic-compatible 代理。它接收 Claude Science 发出的 `/v1/messages`、`/v1/models` 和 OAuth/profile 请求，再把推理请求转成第三方 API 能理解的格式。项目同时提供 macOS 一键安装包、Dashboard、模型菜单补丁、读图适配、一键更新，以及给本地 AI agent 执行的完整操作手册。
+
+> **安全默认值：** 默认安装不会修改 Clash、VPN、TUN、DNS、系统代理、`/etc/hosts`、系统证书或 443 端口。
+
+## 快速开始
+
+### macOS 用户
 
 最省事的安装方式：
 
@@ -10,66 +18,20 @@
 curl -fsSL https://raw.githubusercontent.com/Jyx0208/claude-science-api-bridge/main/scripts/install-macos-app.sh | bash
 ```
 
-这个脚本会下载最新 DMG，复制 App 到 `~/Applications`，移除 Apple quarantine 标记并打开 App。它不会修改 Clash、VPN、TUN、DNS、系统代理、`/etc/hosts`、系统证书或 443 端口。
+这个脚本会下载最新 DMG，复制 App 到 `~/Applications`，移除 Apple quarantine 标记并打开 App。首次打开后按弹窗选择 provider、输入 API key 即可。
 
-这个项目不只是一个代理程序，也是一份给 AI agent 读取的操作说明书。把仓库交给 Codex、Claude Code 或其他本地 agent 后，它可以先读 `AGENTS.md` 和 `docs/agent-runbook.md`，再按步骤完成诊断、安装、配置和验证。
+也可以手动下载：
 
-## 功能
+1. 打开 [Latest Release](https://github.com/Jyx0208/claude-science-api-bridge/releases/latest)
+2. 下载 `Claude.Science.API.Bridge.dmg`
+3. 双击 `Claude Science API Bridge.app`
+4. 按弹窗选择 provider 并输入 API key
 
-- 提供 macOS `.app + .dmg` 一键安装包，首次打开即可选择 provider 并写入本地配置
-- 提供 Linux 安全安装路径：systemd user service 优先，fallback 用户后台进程兜底
-- 在本机启动 Anthropic 兼容接口：`http://127.0.0.1:9876`
-- 将 Claude Science 的 Anthropic Messages API 请求转换为 OpenAI Chat Completions 请求
-- 将 DeepSeek、OpenAI 或其他 OpenAI 兼容接口的响应转换回 Anthropic 格式
-- 支持流式、非流式、工具调用、工具结果、真实图片输入和基础 token 计数
-- 对支持视觉的 OpenAI 兼容模型保留图片输入；对文本模型可自动省略图片，避免后端报错
-- 自动生成 Claude Science 可接受的本地 fake OAuth token
-- 支持 cc-switch 风格的「切换中心」：当前配置摘要、Provider 卡片、搜索、配置档保存和一键切换
-- 支持 Provider 配置档：provider、base_url、协议模式、API key、模型映射可保存和复用
-- 支持一键从当前 Provider 拉取 `/v1/models` 模型列表，并把选中的模型应用到 Claude Science 菜单
-- 支持第三方模型菜单映射，让 Claude Science 模型选择里显示 Kimi、Qwen、GPT 等真实后端模型名
-- 可安全补丁本地 daemon 复制件，把硬编码的 Opus/Sonnet 菜单替换成 BYOK 模型菜单
-- 支持 Provider 预设、OpenAI 兼容翻译与 Anthropic 原生透传两种上游模式
-- 支持可选 path-secret 本地鉴权，避免本机其他进程随便调用你的第三方 key
-- 支持按模型配置 `max_tokens` 上限，减少第三方 provider 因输出上限报 400
-- 提供 Web 管理面板：`http://127.0.0.1:9876/dashboard`
-- 支持从 GitHub Latest Release 检查新版，并在 Dashboard 一键下载、安装和重新打开 App
-- 支持 macOS LaunchAgent 后台运行和开机自启
-- 提供 agent runbook，方便 AI agent 在用户电脑上安全接管配置
+如果 macOS 提示“Apple 无法验证”，这是未公证开源包的常见 Gatekeeper 提示，不代表检测到恶意软件。可使用上面的一行安装命令，或在 Finder 中右键 App 后选择“打开”。
 
-## 默认安全策略
+### Linux 用户
 
-默认安装只走安全模式，不会修改：
-
-- Clash、VPN、TUN、DNS 或系统代理配置
-- `/etc/hosts`
-- macOS 系统证书信任
-- `443` 端口
-
-如果 Claude Science 的某些硬编码 HTTPS 请求必须拦截，可以使用高级模式，但需要先阅读 `docs/network-interception.md`，并由用户明确同意。
-
-本项目不打算重写一个完整的 [cc-switch](https://github.com/farion1231/cc-switch)。更合理的方向是复用它已经验证过的思路：Provider 配置档、模型列表拉取、endpoint 候选推导、模型映射、官方/第三方隔离。本项目只增加 Claude Science 专用的 OAuth 门票、Anthropic/OpenAI 翻译、daemon 模型菜单补丁和安全安装脚本。
-
-同时也吸收了 [CSSwitch](https://github.com/SuperJJ007/CSswitch) 的几个 Science 方向安全设计：入站 Claude OAuth/API key 不转发给第三方、path-secret 本地鉴权、优先使用 provider 的 Anthropic 原生端点。我们的默认模式仍保持兼容：不强制 secret，不默认修改 Clash、DNS 或系统代理。
-
-## 用户怎么使用
-
-### macOS 一键安装
-
-也可以手动下载 macOS 发布包：
-
-1. 下载 `Claude Science API Bridge.dmg`
-2. 双击打开 `Claude Science API Bridge.app`
-3. 按弹窗选择 provider，输入自己的 API key
-4. App 会自动安装本地代理、打开 Dashboard，并启动 Claude Science
-
-如果首次打开被 macOS 拦截，请优先使用上面的一行安装命令，或者在 Finder 里右键 App，选择“打开”。
-
-当前公开 DMG 使用 ad-hoc 签名，未经过 Apple Developer ID 公证，所以 macOS 可能显示“Apple 无法验证是否包含恶意软件”。这不是检测到恶意软件，而是 Apple 没有给这个包签发公证票据。临时使用可右键打开；正式发布给更多用户前，应使用 `./scripts/notarize-macos-release.sh` 做 Developer ID 签名和 Apple notarization。
-
-### Linux 安全安装
-
-Linux 目前支持本地代理、Dashboard、配置管理和 OpenAI 兼容第三方 API 转换。Claude Science 桌面应用本身仍是 macOS 应用，所以 Linux 不会启动 Claude Science，也不会执行 macOS daemon patch。
+Linux 当前支持本地代理、Dashboard、配置管理、systemd user service 和兼容客户端接入。Claude Science 桌面应用本身仍是 macOS 应用，所以 Linux 不会启动 Claude Science，也不会执行 macOS daemon patch。
 
 ```bash
 git clone https://github.com/Jyx0208/claude-science-api-bridge.git
@@ -77,28 +39,285 @@ cd claude-science-api-bridge
 ./scripts/install-safe.sh
 ```
 
-安装脚本会优先创建 `systemd --user` 服务 `claude-science-api-bridge.service`；如果 systemd user 不可用，会退回到当前用户后台进程。兼容客户端使用：
+安装后给兼容客户端设置：
 
 ```bash
 export ANTHROPIC_BASE_URL="http://127.0.0.1:9876"
 ```
 
-详细说明见 `docs/linux.md`。
+详细说明见 [docs/linux.md](docs/linux.md)。
 
-Agent 安装方式也仍然支持。推荐做法是：把下面这段 prompt 复制给你的本地 agent，让 agent 阅读仓库、诊断环境、安装、配置并验证。
+## 这个项目解决什么问题
 
-你只需要准备：
+Claude Science 默认面向 Anthropic API。很多用户希望在 Claude Science 里使用自己的第三方 API，例如 DeepSeek、硅基流动 Kimi、OpenAI、DashScope、智谱或自建 OpenAI-compatible endpoint。本项目提供一个本地桥接层，让 Claude Science 继续以 Anthropic Messages API 的方式工作，而后端实际调用你配置的第三方模型。
 
-- 一台 macOS 电脑
-- 已安装 Claude Science
-- 一个 DeepSeek、OpenAI 或其他 OpenAI 兼容 API key
+核心目标：
 
-## 直接复制给 Agent 的 Prompt
+- 让 Claude Science 能用第三方 API key 和第三方模型
+- 让模型选择菜单显示 Kimi、Qwen、GPT 等真实后端模型名
+- 支持流式输出、工具调用、工具结果、图片输入和基础 token 计数
+- 过滤常见 provider 泄漏的 reasoning / `<think>` 文本，避免思维链直接出现在对话里
+- 尽量让用户不手动折腾，把安装、配置、诊断和验证交给本地 agent
+- 坚持安全模式，不默认触碰系统网络配置
 
-把下面整段发给 Codex、Claude Code 或其他能操作本机终端的 agent：
+## 架构
+
+```mermaid
+flowchart LR
+    accTitle: Bridge Request Flow
+    accDescr: Claude Science sends Anthropic-compatible requests to a local bridge, which applies config, translates requests when needed, and calls the selected third-party API provider
+
+    claude_science["Claude Science"] --> local_proxy["Local bridge<br/>127.0.0.1:9876"]
+    local_proxy --> dashboard["Dashboard<br/>provider, models, logs"]
+    local_proxy --> auth_mock["Local auth/profile mock"]
+    local_proxy --> translator{"Upstream mode"}
+    translator -->|OpenAI compatible| openai_format["Anthropic to OpenAI<br/>format translation"]
+    translator -->|Anthropic native| anthropic_pass["Model/auth rewrite<br/>native passthrough"]
+    openai_format --> provider["Third-party API<br/>DeepSeek / Kimi / OpenAI / Custom"]
+    anthropic_pass --> provider
+    provider --> local_proxy
+    local_proxy --> claude_science
+
+    classDef app fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a5f
+    classDef local fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d
+    classDef decision fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#713f12
+    classDef external fill:#f3f4f6,stroke:#6b7280,stroke-width:2px,color:#1f2937
+
+    class claude_science app
+    class local_proxy,dashboard,auth_mock local
+    class translator decision
+    class openai_format,anthropic_pass,provider external
+```
+
+默认安全路径：
+
+1. 本机启动代理：`http://127.0.0.1:9876`
+2. 设置 `ANTHROPIC_BASE_URL=http://127.0.0.1:9876`
+3. 生成 Claude Science 可接受的本地 OAuth token
+4. 在 Dashboard 中配置 provider、API key、模型映射和图片策略
+5. 对 macOS Claude Science daemon 的用户目录复制件做安全补丁，让模型菜单显示第三方模型名
+6. 用 `verify-proxy.sh` 验证 health、models、messages、recent requests 和可选图片输入
+
+## 功能概览
+
+| 能力 | 状态 | 说明 |
+| --- | --- | --- |
+| macOS 一键安装包 | 已支持 | `.app + .dmg`，首次打开即可配置 provider |
+| Linux 安全安装 | 已支持 | systemd user service 优先，fallback 用户后台进程兜底 |
+| Anthropic to OpenAI 翻译 | 已支持 | 支持流式、非流式、工具调用、工具结果和图片 block |
+| Anthropic 原生透传 | 已支持 | 适合有原生 Anthropic endpoint 的 provider |
+| 第三方模型菜单 | 已支持 | Claude-facing ID 保持兼容，显示名和真实模型来自第三方 |
+| Provider 配置档 | 已支持 | 支持保存、搜索、复制和一键切换 |
+| 一键拉取模型列表 | 已支持 | 自动尝试 `/v1/models`、`/models` 和常见兼容路径 |
+| 图片输入 | 已支持 | 视觉模型保留图片，文本模型可自动省略图片 |
+| reasoning 过滤 | 已支持 | 默认隐藏 `reasoning_content`，过滤常见 `<think>` 泄漏 |
+| 本地 path-secret | 已支持 | 可选保护本机推理接口，避免其他本机进程误用 key |
+| Dashboard 一键更新 | 已支持 | 检查 GitHub Latest Release，下载 DMG 并安装 |
+| 高级 HTTPS 拦截 | 可选 | 仅在用户明确同意后使用，默认不启用 |
+
+## Dashboard 工作流
+
+安装后打开：
 
 ```text
-请你帮我在这台 macOS 上配置 Claude Science API Bridge，让 Claude Science 使用第三方 OpenAI 兼容 API。
+http://127.0.0.1:9876/dashboard
+```
+
+常用操作都在 Dashboard 中完成：
+
+- `Providers`：添加、编辑、复制、搜索和一键切换 provider
+- `模型菜单`：拉取上游模型列表，选择要显示在 Claude Science 里的第三方模型
+- `高级设置`：配置图片策略、reasoning 策略、本地 path-secret、LaunchAgent 和更新
+- `诊断日志`：查看最近请求、真实后端模型、成功/失败状态
+
+推荐配置流程：
+
+1. 添加 provider
+2. 输入 API key 和 base URL
+3. 点击“拉取模型列表”
+4. 选择真实模型
+5. 点击“应用到菜单”或“应用并补丁菜单”
+6. 点击“一键测试”
+7. 重新打开 Claude Science
+
+## 常见 provider 配置
+
+### DeepSeek
+
+```json
+{
+  "deepseek_api_key": "REDACTED",
+  "deepseek_base_url": "https://api.deepseek.com",
+  "deepseek_upstream_mode": "openai",
+  "default_backend": "deepseek",
+  "force_model": "deepseek-chat",
+  "inline_image_policy": "omit"
+}
+```
+
+### OpenAI
+
+```json
+{
+  "openai_api_key": "REDACTED",
+  "openai_base_url": "https://api.openai.com",
+  "openai_upstream_mode": "openai",
+  "default_backend": "openai",
+  "force_model": "gpt-4o",
+  "inline_image_policy": "preserve"
+}
+```
+
+### 硅基流动 Kimi
+
+```json
+{
+  "custom_api_key": "REDACTED",
+  "custom_base_url": "https://api.siliconflow.cn",
+  "custom_upstream_mode": "openai",
+  "default_backend": "custom",
+  "force_model": "Pro/moonshotai/Kimi-K2.6",
+  "model_aliases": [
+    {
+      "id": "claude-opus-4-8",
+      "display_name": "Kimi K2.6 Pro++ (Vision)",
+      "backend": "custom",
+      "model": "Pro/moonshotai/Kimi-K2.6"
+    }
+  ],
+  "model_list_mode": "aliases",
+  "model_menu_strategy": "claude_compatible",
+  "inline_image_policy": "preserve",
+  "reasoning_content_policy": "never"
+}
+```
+
+### 任意 OpenAI 兼容 API
+
+```json
+{
+  "custom_api_key": "REDACTED",
+  "custom_base_url": "https://provider.example.com",
+  "custom_upstream_mode": "openai",
+  "default_backend": "custom",
+  "force_model": "provider-model-name",
+  "model_aliases": [
+    {
+      "id": "claude-opus-4-8",
+      "display_name": "Provider Model",
+      "backend": "custom",
+      "model": "provider-model-name"
+    }
+  ],
+  "model_list_mode": "aliases",
+  "model_menu_strategy": "claude_compatible",
+  "model_token_caps": {
+    "provider-model-name": 8192
+  },
+  "inline_image_policy": "auto",
+  "reasoning_content_policy": "never"
+}
+```
+
+`custom_base_url` 可以写成 `https://provider.example.com`，也可以写成 `https://provider.example.com/v1`，代理会自动规范化。
+
+## 模型菜单如何工作
+
+Claude Science 的模型选择界面有一部分来自本地 daemon 的硬编码列表，所以仅修改 `/v1/models` 不一定够。本项目的安全安装和启动脚本会自动运行：
+
+```bash
+./scripts/patch-daemon-models.sh
+```
+
+这个脚本只修改用户目录中的 daemon 复制件：
+
+```text
+~/.claude-science/bin/claude-science
+```
+
+它不会修改 `/Applications/Claude Science.app`，也不会修改 Clash、DNS、系统代理、证书或 443 端口。
+
+推荐保持：
+
+```json
+{
+  "model_list_mode": "aliases",
+  "model_menu_strategy": "claude_compatible"
+}
+```
+
+这样 Claude Science 看到的模型 ID 仍是它认可的 `claude-opus-4-8`、`claude-sonnet-5` 等槽位，但显示名和实际请求模型来自你的 `model_aliases`。别名命中时会优先于 `force_model`，所以用户在菜单里选择哪个第三方别名，代理就调用对应的真实模型。
+
+## 图片输入和读图能力
+
+Claude Science 发出的 Anthropic 图片 block 会被代理转换成 OpenAI 兼容的 `image_url` 内容。只要后端模型本身支持视觉输入，就可以真正读图。
+
+`inline_image_policy` 支持：
+
+| 策略 | 行为 | 适用场景 |
+| --- | --- | --- |
+| `auto` | DeepSeek 等文本后端省略图片，Custom/OpenAI 后端保留图片 | 不确定模型能力时 |
+| `preserve` | 始终发送图片 | Kimi K2.6、GPT-4o、Qwen3-VL 等视觉模型 |
+| `omit` | 始终省略图片 | 纯文本便宜模型 |
+| `omit_inline` | 只省略 base64 内联图片，保留外部图片 URL | 后端不接受大 base64 时 |
+
+对硅基流动 Kimi，代理会在本机把内联 PNG/WebP/GIF/HEIC 转成 JPEG data URL 再发送，避免部分服务拒绝 PNG base64。图片不会被上传到临时图床，只会随请求发送到你配置的后端 API。
+
+读图验收：
+
+```bash
+VERIFY_IMAGE=1 ./scripts/verify-proxy.sh
+```
+
+如果模型不支持视觉输入，这一步应失败。需要换成支持视觉的模型，或把图片策略改回 `omit`。
+
+## 本地 path-secret
+
+默认配置保持兼容：
+
+```text
+ANTHROPIC_BASE_URL=http://127.0.0.1:9876
+```
+
+如果希望限制本机其他进程调用你的第三方 key，可以开启：
+
+```json
+{
+  "proxy_auth_token": "生成一段随机长字符串",
+  "proxy_auth_mode": "required"
+}
+```
+
+之后启动脚本会自动使用：
+
+```text
+ANTHROPIC_BASE_URL=http://127.0.0.1:9876/<secret>
+```
+
+日志和 Dashboard 会对 secret 脱敏。未带 secret 的 `/v1/messages`、`/v1/models` 请求会返回 403。
+
+## 更新
+
+Dashboard 会检查 GitHub Latest Release。发现新版本后可直接点击“一键更新”，代理会下载 release 中的 DMG、复制 App 到 `~/Applications` 并重新打开。
+
+维护者发布新版时请保持 DMG asset 文件名稳定：
+
+```text
+Claude.Science.API.Bridge.dmg
+```
+
+如果 GitHub API 暂时限流，Dashboard 会回退到：
+
+```text
+https://github.com/Jyx0208/claude-science-api-bridge/releases/latest/download/Claude.Science.API.Bridge.dmg
+```
+
+## 给本地 agent 的完整 prompt
+
+把下面整段发给 Codex、Claude Code 或其他能操作本机终端的 agent。用户只需要提供 API key、provider 和模型偏好，不需要自己安装。
+
+```text
+请你帮我在这台机器上配置 Claude Science API Bridge，让 Claude Science 或兼容客户端使用第三方 OpenAI 兼容 API。
 
 仓库地址：
 https://github.com/Jyx0208/claude-science-api-bridge
@@ -137,14 +356,14 @@ https://github.com/Jyx0208/claude-science-api-bridge
 8. 启动或重启代理服务。
 9. 运行 ./scripts/verify-proxy.sh 做 health、models、messages 和 recent-requests 验证。
 10. 如果模型支持读图，运行 VERIFY_IMAGE=1 ./scripts/verify-proxy.sh 做真实图片输入验证。
-11. 运行 ./scripts/start-claude-science.sh，让脚本自动刷新 token、补丁本地 daemon 复制件并重启 Claude Science。
-12. 再检查 http://127.0.0.1:9876/api/recent-requests，确认 Claude Science 命中了本地代理。
+11. 如果是 macOS，运行 ./scripts/start-claude-science.sh，让脚本自动刷新 token、补丁本地 daemon 复制件并重启 Claude Science。
+12. 再检查 http://127.0.0.1:9876/api/recent-requests，确认请求命中了本地代理。
 
 如果遇到问题：
 1. 先运行 ./scripts/doctor.sh。
 2. 阅读 docs/troubleshooting.md。
 3. 优先修安全模式路径。
-4. 不要通过修改 Clash 或系统网络配置来“试一试”。
+4. 不要通过修改 Clash 或系统网络配置来试错。
 
 最终回复请只告诉我：
 1. 是否安装成功。
@@ -154,17 +373,17 @@ https://github.com/Jyx0208/claude-science-api-bridge
 5. 如果失败，明确卡在哪一步以及下一步需要我提供什么。
 ```
 
-## 给 Agent 的入口
+## Agent 入口
 
-如果你是 AI agent，请不要让用户手动安装。你应该按顺序读取：
+如果你是 AI agent，请不要让用户手动安装。按顺序读取：
 
-1. `AGENTS.md`
-2. `docs/agent-runbook.md`
-3. `docs/troubleshooting.md`
-4. `docs/network-interception.md`，仅在用户明确允许高级拦截时读取和执行
-5. `docs/github-publishing.md`，仅在需要发布到 GitHub 时读取
+1. [AGENTS.md](AGENTS.md)
+2. [docs/agent-runbook.md](docs/agent-runbook.md)
+3. [docs/troubleshooting.md](docs/troubleshooting.md)
+4. [docs/network-interception.md](docs/network-interception.md)，仅在用户明确允许高级拦截时读取和执行
+5. [docs/github-publishing.md](docs/github-publishing.md)，仅在需要发布到 GitHub 时读取
 
-推荐执行流程：
+推荐执行：
 
 ```bash
 ./scripts/doctor.sh
@@ -173,204 +392,9 @@ https://github.com/Jyx0208/claude-science-api-bridge
 ./scripts/verify-proxy.sh
 ```
 
-`doctor.sh` 是只读诊断脚本；agent 应先运行它，不要直接猜测用户机器状态。
+`doctor.sh` 是只读诊断脚本；agent 应先运行它，不要猜测用户机器状态。
 
-## Provider 配置示例
-
-### DeepSeek
-
-```json
-{
-  "deepseek_api_key": "REDACTED",
-  "deepseek_base_url": "https://api.deepseek.com",
-  "default_backend": "deepseek",
-  "force_model": "deepseek-chat",
-  "inline_image_policy": "auto"
-}
-```
-
-### OpenAI
-
-```json
-{
-  "openai_api_key": "REDACTED",
-  "openai_base_url": "https://api.openai.com",
-  "default_backend": "openai",
-  "force_model": "gpt-4o",
-  "inline_image_policy": "preserve"
-}
-```
-
-### 任意 OpenAI 兼容 API
-
-```json
-{
-  "custom_api_key": "REDACTED",
-  "custom_base_url": "https://provider.example.com",
-  "custom_upstream_mode": "openai",
-  "default_backend": "custom",
-  "force_model": "provider-model-name",
-  "model_aliases": [
-    {
-      "id": "claude-opus-4-8",
-      "display_name": "Provider Model",
-      "backend": "custom",
-      "model": "provider-model-name"
-    }
-  ],
-  "model_list_mode": "aliases",
-  "model_menu_strategy": "claude_compatible",
-  "model_token_caps": {
-    "provider-model-name": 8192
-  },
-  "default_max_tokens_cap": 0,
-  "inline_image_policy": "auto"
-}
-```
-
-`custom_base_url` 可以写成 `https://provider.example.com`，也可以写成 `https://provider.example.com/v1`，代理会自动规范化。
-
-### 硅基流动 Kimi 示例
-
-```json
-{
-  "custom_api_key": "REDACTED",
-  "custom_base_url": "https://api.siliconflow.cn",
-  "custom_upstream_mode": "openai",
-  "default_backend": "custom",
-  "force_model": "Pro/moonshotai/Kimi-K2.6",
-  "model_aliases": [
-    {
-      "id": "claude-opus-4-8",
-      "display_name": "Kimi K2.6 Pro++ (Vision)",
-      "backend": "custom",
-      "model": "Pro/moonshotai/Kimi-K2.6"
-    }
-  ],
-  "model_list_mode": "aliases",
-  "model_menu_strategy": "claude_compatible",
-  "inline_image_policy": "preserve",
-  "reasoning_content_policy": "never"
-}
-```
-
-`reasoning_content_policy` 默认应保持 `never`。部分后端会把内部思考、会话恢复记录或执行计划放在 `reasoning_content` 或普通 `content` 前缀里；代理会尽量过滤这些工作记录，避免它们作为普通对话显示。
-
-## 上游协议模式
-
-每个后端都有一个 `*_upstream_mode`：
-
-- `openai`：Claude Science 的 Anthropic 请求先由本代理翻译成 OpenAI Chat Completions，再发给第三方。适合硅基流动 Kimi、DashScope Qwen、OpenAI 兼容聚合器等。
-- `anthropic`：第三方 provider 本身支持 Anthropic Messages API，本代理只替换模型名和鉴权头后透传。工具调用、thinking、流式事件更保真。适合 DeepSeek Anthropic、Moonshot Anthropic、部分 provider 的原生 Claude 兼容端点。
-
-DeepSeek 原生 Anthropic 示例：
-
-```json
-{
-  "deepseek_api_key": "REDACTED",
-  "deepseek_base_url": "https://api.deepseek.com/anthropic",
-  "deepseek_upstream_mode": "anthropic",
-  "default_backend": "deepseek",
-  "force_model": "deepseek-chat"
-}
-```
-
-Dashboard 的「Provider 预设」可以快速套用常见 provider 的 base URL、协议模式、默认模型和模型别名。套用预设不会写入 API key；key 仍需本地配置。
-
-Dashboard 的「一键获取模型列表」会使用当前 provider 的 API key 调用上游模型列表端点。模型端点会按 cc-switch 的思路自动尝试：
-
-- `{base_url}/v1/models`
-- `{base_url}/models`，当 base_url 已以 `/v1`、`/v4` 等版本段结尾时
-- 剥离 `/anthropic`、`/api/anthropic`、`/apps/anthropic`、`/api/coding`、`/coding` 等兼容子路径后再尝试 `/v1/models` 和 `/models`
-
-拉取成功后，可以勾选模型并点击「应用到菜单」或「应用并补丁菜单」。默认 `model_menu_strategy=claude_compatible`：Claude Science 看到的 ID 仍是 `claude-opus-4-8`、`claude-sonnet-5` 等它认可的槽位，但显示名和实际请求模型都是第三方模型。
-
-## 本地 Path-Secret
-
-默认 `proxy_auth_mode=optional`，保持旧用法：
-
-```text
-ANTHROPIC_BASE_URL=http://127.0.0.1:9876
-```
-
-如果需要更严格的本机访问控制，可以配置：
-
-```json
-{
-  "proxy_auth_token": "生成一段随机长字符串",
-  "proxy_auth_mode": "required"
-}
-```
-
-之后启动脚本会自动使用：
-
-```text
-ANTHROPIC_BASE_URL=http://127.0.0.1:9876/<secret>
-```
-
-日志和 Dashboard 会对 secret 脱敏；没有 secret 的 `/v1/messages`、`/v1/models` 请求会返回 403。
-
-## 模型选择显示第三方模型
-
-Claude Science 的模型选择界面有一部分来自本地 daemon 的硬编码模型列表，因此只改 `/v1/models` 不一定能让界面立刻显示第三方模型名。
-
-安全安装和启动脚本会自动运行：
-
-```bash
-./scripts/patch-daemon-models.sh
-```
-
-这个脚本只修改 `~/.claude-science/bin/claude-science` 这一份用户目录里的 daemon 复制件，不修改 `/Applications/Claude Science.app`，也不修改 Clash、DNS、系统代理、证书或 443 端口。脚本会：
-
-- 备份本地 daemon 复制件
-- 默认把 Claude-facing 模型 ID 保持为 Claude Science 认可的槽位：`claude-opus-4-8`、`claude-sonnet-5`、`claude-sonnet-4-6`
-- 把显示名改成 `model_aliases` 里的第三方模型名，例如 `Kimi K2.6 Pro++`
-- 同步写回 `config.json`，确保这些菜单 ID 能路由到真实后端模型
-- 重新 ad-hoc 签名并执行 daemon 可运行检查
-
-常用配置：
-
-```json
-{
-  "model_aliases": [
-    {
-      "id": "claude-opus-4-8",
-      "display_name": "Kimi K2.6 Pro++ (Vision)",
-      "backend": "custom",
-      "model": "Pro/moonshotai/Kimi-K2.6"
-    }
-  ],
-  "model_list_mode": "aliases",
-  "model_menu_strategy": "claude_compatible"
-}
-```
-
-`model_aliases` 中的 `id` 是 Claude Science 看到的模型 ID，`model` 是实际发给第三方 API 的模型名。别名命中时会优先于 `force_model`，所以用户在菜单里选择哪个第三方别名，代理就会调用对应的真实模型。
-
-也可以设置 `model_menu_strategy=real_ids`，让 `/v1/models` 直接暴露第三方真实模型 ID。但部分 Claude Science 版本会把非 `claude-*` 模型塞进 More models 或直接隐藏，所以默认推荐 `claude_compatible`。
-
-## 图片 / 读图能力
-
-Claude Science 发出的 Anthropic 图片 block 会被代理转换成 OpenAI 兼容的 `image_url` 内容。只要后端模型本身支持视觉输入，就可以让模型真正读图，而不是用文本占位替代图片。
-
-`inline_image_policy` 支持：
-
-- `auto`：默认策略。DeepSeek 这类文本后端会省略图片；Custom/OpenAI 后端会保留图片。
-- `preserve`：始终把图片发送给后端。适合 Kimi K2.6、GPT-4o、Qwen3-VL 等视觉模型。
-- `omit`：始终省略图片。适合只想跑文本的便宜模型。
-- `omit_inline`：只省略 base64 内联图片，保留外部图片 URL。
-
-对硅基流动 Kimi，代理会在本机把内联 PNG/WebP/GIF/HEIC 转成 JPEG data URL 再发送，避免部分服务拒绝 PNG base64。图片不会被上传到临时图床；只会随请求发送到你配置的后端 API。
-
-读图验收由 agent 执行：
-
-```bash
-VERIFY_IMAGE=1 ./scripts/verify-proxy.sh
-```
-
-这个测试会生成一张红色图片，通过 Anthropic 图片格式发给本地代理，并要求后端模型回答 `red`。如果模型不支持视觉输入，这一步应该失败，agent 需要换成支持视觉的模型或把图片策略改回 `omit`。
-
-## Agent 验收标准
+## 验收标准
 
 下面这些命令由 agent 执行，不要求用户自己运行：
 
@@ -385,21 +409,34 @@ curl -sS http://127.0.0.1:9876/v1/messages \
   -d '{"model":"claude-sonnet-4-5","max_tokens":32,"messages":[{"role":"user","content":"Reply OK"}]}'
 ```
 
-如果配置的是视觉模型，agent 还应执行：
+如果配置的是视觉模型，还应执行：
 
 ```bash
 VERIFY_IMAGE=1 ./scripts/verify-proxy.sh
 ```
 
-agent 还应检查最近请求：
+最近请求中应能看到成功的后端请求：
 
 ```bash
 curl -sS http://127.0.0.1:9876/api/recent-requests
 ```
 
-## 构建发布包
+## 开发和测试
 
-维护者或 agent 可以在 macOS 上生成 `.app` 和 `.dmg`：
+前台启动：
+
+```bash
+./start.sh
+```
+
+自测：
+
+```bash
+./scripts/self-test.sh
+./scripts/verify-proxy.sh
+```
+
+构建 macOS 发布包：
 
 ```bash
 printf '0.2.6\n' > VERSION
@@ -407,9 +444,7 @@ printf '0.2.6\n' > VERSION
 ./scripts/smoke-test-release-package.sh
 ```
 
-Dashboard 会通过 GitHub Latest Release 检查是否有新版本。发布新版时请先更新 `VERSION`，再创建 GitHub Release 并上传 DMG；用户安装后的本地面板会在检测到更新时显示提醒，并可直接点“一键更新”自动下载 DMG、复制到 `~/Applications`、重新打开 App。
-
-如果有 Apple Developer ID 证书和 notarytool 凭证，可生成已公证 DMG：
+如需 Apple Developer ID 签名和公证：
 
 ```bash
 DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (TEAMID)" \
@@ -417,14 +452,7 @@ NOTARYTOOL_PROFILE="your-notarytool-profile" \
 ./scripts/notarize-macos-release.sh
 ```
 
-产物位于：
-
-```text
-dist/Claude Science API Bridge.app
-dist/Claude Science API Bridge.dmg
-```
-
-发布包不会包含 `config.json`、证书、日志、`.env` 或 Git 历史。详细说明见 `docs/release-packaging.md`。
+发布包不会包含 `config.json`、证书、日志、`.env` 或 Git 历史。详细说明见 [docs/release-packaging.md](docs/release-packaging.md)。
 
 ## 项目结构
 
@@ -433,6 +461,7 @@ dist/Claude Science API Bridge.dmg
 ├── AGENTS.md
 ├── README.md
 ├── SECURITY.md
+├── VERSION
 ├── config.example.json
 ├── proxy.py
 ├── setup-token.py
@@ -453,9 +482,9 @@ dist/Claude Science API Bridge.dmg
 ├── docs/
 │   ├── agent-runbook.md
 │   ├── github-publishing.md
+│   ├── linux.md
 │   ├── network-interception.md
 │   ├── release-packaging.md
-│   ├── linux.md
 │   └── troubleshooting.md
 ├── packaging/
 │   └── macos/
@@ -475,6 +504,7 @@ dist/Claude Science API Bridge.dmg
 - `*.plist`
 - 日志
 - Python 缓存
+- `dist/`
 
 发布前请确认：
 
@@ -484,9 +514,13 @@ git status --ignored
 
 确保 API key、OAuth token、证书私钥和本地日志没有被加入 Git。
 
+## 相关项目
+
+本项目参考了 cc-switch 的 provider 配置档、模型列表拉取、endpoint 候选推导和模型映射思路，同时加入 Claude Science 专用的 OAuth/profile mock、Anthropic/OpenAI 翻译、daemon 模型菜单补丁和安全安装脚本。
+
+- [cc-switch](https://github.com/farion1231/cc-switch)
+- [CSSwitch](https://github.com/SuperJJ007/CSswitch)
+
 ## 许可证
 
-MIT。见 `LICENSE`。
-
-
-友情链接 https://linux.do/
+MIT。见 [LICENSE](LICENSE)。
