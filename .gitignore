@@ -26,5 +26,8 @@ __pycache__/
 .venv/
 venv/
 
+# Release artifacts
+dist/
+
 # macOS
 .DS_Store

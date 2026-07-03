@@ -49,7 +49,9 @@ The safe path is:
 - `scripts/patch-daemon-models.sh`: byte-length-preserving model picker patch for the local daemon copy.
 - `scripts/start-claude-science.sh`: refreshes token, reapplies daemon patches, and restarts the app.
 - `scripts/verify-proxy.sh`: end-to-end proxy verification after provider config.
+- `scripts/build-macos-release.sh`: builds the one-click macOS `.app` and `.dmg`.
 - `scripts/uninstall.sh`: removes LaunchAgent and launchctl env only.
+- `packaging/macos/`: app launcher and release packaging scripts.
 - `setup-network.sh`: advanced HTTPS interception. Treat as opt-in only.
 - `docs/agent-runbook.md`: step-by-step procedure for agents.
 - `docs/network-interception.md`: advanced interception notes.

@@ -282,6 +282,7 @@ Run:
 
 ```bash
 ./scripts/self-test.sh
+./scripts/build-macos-release.sh
 git status --ignored
 ```
 
@@ -293,3 +294,6 @@ Confirm ignored local files are not staged:
 - `*.plist`
 - logs
 - Python caches
+- `dist/` release artifacts
+
+The macOS release package is documented in `docs/release-packaging.md`.

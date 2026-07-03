@@ -36,7 +36,16 @@
 
 ## 用户怎么使用
 
-普通用户不要自己运行安装命令。推荐做法是：把下面这段 prompt 复制给你的本地 agent，让 agent 阅读仓库、诊断环境、安装、配置并验证。
+最简单的方式是下载 macOS 发布包：
+
+1. 下载 `Claude Science API Bridge.dmg`
+2. 双击打开 `Claude Science API Bridge.app`
+3. 按弹窗选择 provider，输入自己的 API key
+4. App 会自动安装本地代理、打开 Dashboard，并启动 Claude Science
+
+如果首次打开被 macOS 拦截，请在 Finder 里右键 App，选择“打开”。
+
+Agent 安装方式也仍然支持。推荐做法是：把下面这段 prompt 复制给你的本地 agent，让 agent 阅读仓库、诊断环境、安装、配置并验证。
 
 你只需要准备：
 
@@ -333,6 +342,23 @@ agent 还应检查最近请求：
 curl -sS http://127.0.0.1:9876/api/recent-requests
 ```
 
+## 构建发布包
+
+维护者或 agent 可以在 macOS 上生成 `.app` 和 `.dmg`：
+
+```bash
+./scripts/build-macos-release.sh
+```
+
+产物位于：
+
+```text
+dist/Claude Science API Bridge.app
+dist/Claude Science API Bridge.dmg
+```
+
+发布包不会包含 `config.json`、证书、日志、`.env` 或 Git 历史。详细说明见 `docs/release-packaging.md`。
+
 ## 项目结构
 
 ```text
@@ -361,7 +387,12 @@ curl -sS http://127.0.0.1:9876/api/recent-requests
 │   ├── agent-runbook.md
 │   ├── github-publishing.md
 │   ├── network-interception.md
+│   ├── release-packaging.md
 │   └── troubleshooting.md
+├── packaging/
+│   └── macos/
+│       ├── app-launcher.sh
+│       └── build-release.sh
 └── static/
     └── dashboard.html
 ```
