@@ -21,8 +21,9 @@ rsync -a "$PROJECT_DIR/" "$RESOURCES_DIR/proxy/" \
   --exclude .env.* \
   --exclude .venv \
   --exclude venv \
+  --exclude tests \
+  --exclude requirements-dev.txt \
   --exclude __pycache__ \
-  --exclude "tests/__pycache__" \
   --exclude "*.pyc" \
   --exclude "*.plist" \
   --exclude "*.log" \

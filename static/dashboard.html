@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Claude Science BYOK Proxy</title>
+<title>Claude Science API Bridge</title>
 <style>
   :root {
     --bg: #0d1117;
@@ -141,6 +141,57 @@
   .model-id { font-family: 'SF Mono', 'Monaco', 'Menlo', monospace; flex: 1; word-break: break-all; }
   .model-owner { color: var(--text-dim); font-size: 11px; }
 
+  .switch-hero {
+    display: grid; grid-template-columns: 1.25fr 1fr; gap: 12px;
+    margin-bottom: 16px;
+  }
+  .switch-panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+  }
+  .mode-seg {
+    display: inline-flex; padding: 3px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; gap: 3px;
+  }
+  .seg-btn {
+    border: none; border-radius: 6px; background: transparent; color: var(--text-dim);
+    padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: default;
+  }
+  .seg-btn.active { background: var(--accent); color: white; }
+  .switch-kv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+  .kv-item { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 9px 10px; min-width: 0; }
+  .kv-label { color: var(--text-dim); font-size: 11px; margin-bottom: 3px; }
+  .kv-value { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .model-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .chip {
+    display: inline-flex; align-items: center; max-width: 100%;
+    padding: 4px 8px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--bg); color: var(--text); font-size: 11px;
+  }
+  .provider-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .provider-toolbar input { flex: 1; }
+  .provider-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .switch-card {
+    border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+    padding: 13px; position: relative;
+  }
+  .switch-card.active { border-color: var(--green); box-shadow: inset 0 0 0 1px rgba(63,185,80,0.35); }
+  .switch-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .switch-card-title { font-size: 14px; font-weight: 800; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .switch-card-meta { color: var(--text-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .switch-card-models { display: flex; gap: 5px; flex-wrap: wrap; min-height: 24px; margin: 10px 0; }
+  .mini-badge {
+    display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid var(--border);
+    padding: 2px 7px; font-size: 10.5px; color: var(--text-dim); background: var(--bg);
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .active-badge { color: var(--green); border-color: rgba(63,185,80,0.55); }
+  .switch-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  @media (max-width: 780px) {
+    .switch-hero { grid-template-columns: 1fr; }
+    .provider-grid { grid-template-columns: 1fr; }
+  }
+
   /* Tabs */
   .tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
   .tab {
@@ -212,7 +263,7 @@
   <div class="header">
     <div class="header-icon">🧪</div>
     <div class="header-info">
-      <h1>Claude Science BYOK Proxy</h1>
+      <h1>Claude Science API Bridge</h1>
       <div class="subtitle">使用 DeepSeek / OpenAI / Custom API 驱动 Claude Science</div>
     </div>
     <div class="status-badge status-running" id="statusBadge">
@@ -223,7 +274,7 @@
 
   <!-- Tabs -->
   <div class="tabs">
-    <button class="tab active" data-tab="providers">🔑 API 配置</button>
+    <button class="tab active" data-tab="providers">🔀 切换中心</button>
     <button class="tab" data-tab="routing">🔀 路由规则</button>
     <button class="tab" data-tab="setup">⚡ 一键部署</button>
     <button class="tab" data-tab="logs">📋 请求日志</button>
@@ -231,28 +282,64 @@
 
   <!-- Tab: API 配置 -->
   <div class="tab-content active" id="tab-providers">
-    <div class="card">
-      <div class="card-title" style="margin-bottom:14px"><span class="icon">🧭</span> Provider 预设</div>
-      <div class="form-group">
-        <label>快速套用</label>
-        <select id="providerPreset"></select>
+    <div class="switch-hero">
+      <div class="switch-panel">
+        <div class="card-header" style="margin-bottom:0">
+          <div>
+            <div class="card-title"><span class="icon">🔀</span> Provider Switch</div>
+            <div class="subtitle" style="margin-top:3px">Claude Science → Local Bridge → Third-party API</div>
+          </div>
+          <div class="mode-seg">
+            <button class="seg-btn active">第三方 API</button>
+            <button class="seg-btn">官方直连</button>
+          </div>
+        </div>
+        <div class="switch-kv">
+          <div class="kv-item">
+            <div class="kv-label">当前后端</div>
+            <div class="kv-value" id="switchCurrentBackend">-</div>
+          </div>
+          <div class="kv-item">
+            <div class="kv-label">当前模型</div>
+            <div class="kv-value" id="switchCurrentModel">-</div>
+          </div>
+          <div class="kv-item">
+            <div class="kv-label">上游协议</div>
+            <div class="kv-value" id="switchCurrentMode">-</div>
+          </div>
+          <div class="kv-item">
+            <div class="kv-label">菜单策略</div>
+            <div class="kv-value" id="switchMenuStrategy">-</div>
+          </div>
+        </div>
+        <div class="model-chips" id="switchModelChips"></div>
       </div>
-      <div class="btn-group">
-        <button class="btn btn-outline btn-sm" onclick="applyProviderPreset()">⚡ 应用预设</button>
+
+      <div class="switch-panel">
+        <div class="card-title" style="margin-bottom:12px"><span class="icon">⚙</span> 快速动作</div>
+        <div class="btn-group">
+          <button class="btn btn-primary btn-sm" onclick="fetchModelsForCurrent()">📥 拉取当前模型</button>
+          <button class="btn btn-outline btn-sm" onclick="patchCurrentModelMenu()">🧩 补丁菜单</button>
+          <button class="btn btn-outline btn-sm" onclick="saveCurrentProfile()">💾 保存当前</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:12px" id="switchHint"></div>
       </div>
     </div>
 
     <div class="card">
-      <div class="card-title" style="margin-bottom:14px"><span class="icon">🗂</span> Provider 配置档</div>
-      <div class="form-group">
-        <label>已保存 / 内置配置档</label>
-        <select id="providerProfile"></select>
+      <div class="card-header">
+        <div class="card-title"><span class="icon">🗂</span> Providers</div>
+        <div class="btn-group">
+          <button class="btn btn-outline btn-sm" onclick="saveCurrentProfile()">保存当前</button>
+        </div>
       </div>
-      <div class="btn-group">
-        <button class="btn btn-primary btn-sm" onclick="activateProviderProfile()">✅ 应用配置档</button>
-        <button class="btn btn-outline btn-sm" onclick="saveCurrentProfile()">💾 保存当前配置</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteProviderProfile()">🗑 删除自定义配置档</button>
+      <div class="provider-toolbar">
+        <input type="text" id="providerSearch" placeholder="搜索 provider、base_url 或模型" oninput="renderProviderCards()">
+        <select id="providerPreset" style="max-width:240px"></select>
+        <button class="btn btn-outline btn-sm" onclick="applyProviderPreset()">套用预设</button>
       </div>
+      <select id="providerProfile" style="display:none"></select>
+      <div class="provider-grid" id="providerCards"></div>
     </div>
 
     <!-- DeepSeek -->
@@ -566,15 +653,16 @@
 
 <script>
 // ── Tab switching ──
+function switchTab(target) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === target));
+  document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+  const el = document.getElementById('tab-' + target);
+  if (el) el.style.display = 'block';
+  if (target === 'logs') loadLogs();
+}
+
 document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    const target = tab.dataset.tab;
-    document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
-    document.getElementById('tab-' + target).style.display = 'block';
-    if (target === 'logs') loadLogs();
-  });
+  tab.addEventListener('click', () => switchTab(tab.dataset.tab));
 });
 
 // ── Toast ──
@@ -591,7 +679,13 @@ function toast(msg, type='info') {
 // ── API helpers ──
 async function api(path, opts={}) {
   const res = await fetch(path, { headers: {'Content-Type':'application/json'}, ...opts });
-  return res.json();
+  const text = await res.text();
+  if (!text.trim()) return { ok: res.ok, status: res.status };
+  try {
+    return JSON.parse(text);
+  } catch(e) {
+    return { ok: false, status: res.status, error: text.slice(0, 500) || e.message };
+  }
 }
 
 function escapeHtml(value) {
@@ -600,9 +694,19 @@ function escapeHtml(value) {
   }[c]));
 }
 
+function jsArg(value) {
+  return JSON.stringify(String(value || ''))
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e');
+}
+
 let providerPresets = {};
 let providerProfiles = [];
 let fetchedModels = [];
+let currentConfig = {};
 
 async function loadProviderPresets() {
   try {
@@ -625,6 +729,7 @@ async function loadProviderProfiles() {
       const active = profile.id === res.active_profile_id ? ' · 当前' : '';
       return `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.label || profile.id)} (${mark}${active})</option>`;
     }).join('');
+    renderProviderCards();
   } catch(e) { console.error('Load provider profiles failed:', e); }
 }
 
@@ -638,6 +743,7 @@ function toggleVisibility(id) {
 async function loadConfig() {
   try {
     const cfg = await api('/api/config');
+    currentConfig = cfg;
     // Don't pre-fill API keys (they're masked by the server)
     // Only show placeholder to indicate whether key is configured
     document.getElementById('deepseekKey').placeholder = cfg.deepseek_api_key ? '(已配置，输入新 key 可覆盖)' : 'sk-...';
@@ -667,7 +773,114 @@ async function loadConfig() {
     document.getElementById('reasoningPolicy').value = cfg.reasoning_content_policy || 'never';
     document.getElementById('inlineImagePolicy').value = cfg.inline_image_policy || 'auto';
     updateProviderStatus(cfg);
+    renderSwitchSummary(cfg);
+    renderProviderCards();
   } catch(e) { console.error('Load config failed:', e); }
+}
+
+function renderSwitchSummary(cfg) {
+  const backend = cfg.default_backend || '-';
+  document.getElementById('switchCurrentBackend').textContent = backend;
+  document.getElementById('switchCurrentModel').textContent = cfg.force_model || '-';
+  const modes = cfg.upstream_modes || {};
+  document.getElementById('switchCurrentMode').textContent = modes[backend] || '-';
+  document.getElementById('switchMenuStrategy').textContent = cfg.model_menu_strategy || '-';
+  const aliases = cfg.model_aliases || [];
+  document.getElementById('switchModelChips').innerHTML = aliases.length
+    ? aliases.map(a => `<span class="chip">${escapeHtml(a.display_name || a.model || a.id)}</span>`).join('')
+    : '<span class="chip">No menu models</span>';
+  document.getElementById('switchHint').textContent =
+    `ANTHROPIC_BASE_URL=http://${cfg.proxy_host || '127.0.0.1'}:${cfg.proxy_port || 9876}`;
+}
+
+function profileModels(profile) {
+  const models = profile.models || [];
+  if (models.length) return models;
+  if (profile.default_model) return [{ id: profile.default_model, display_name: profile.default_model }];
+  return [];
+}
+
+function modelPriority(model, preferredIds=[]) {
+  const id = String(model.id || model.model || '').toLowerCase();
+  const preferredIndex = preferredIds.findIndex(v => String(v || '').toLowerCase() === id);
+  if (preferredIndex >= 0) return [0, preferredIndex, id];
+  const nonChat = ['embedding', 'embed', 'bge-', 'reranker', 'ocr', 'image', 'kolors', 'voice', 'audio', 'whisper', 'tts'];
+  if (nonChat.some(k => id.includes(k))) return [4, 0, id];
+  const likelyChat = ['kimi', 'deepseek', 'qwen', 'glm', 'gpt', 'claude', 'moonshot', 'minimax', 'mistral', 'coder', 'chat', 'instruct', 'vl'];
+  if (likelyChat.some(k => id.includes(k))) return [1, 0, id];
+  return [2, 0, id];
+}
+
+function rankFetchedModels(models, preferredModels=[]) {
+  const preferredIds = preferredModels.map(m => m.id || m.model).filter(Boolean);
+  return [...(models || [])].sort((a, b) => {
+    const pa = modelPriority(a, preferredIds);
+    const pb = modelPriority(b, preferredIds);
+    return pa[0] - pb[0] || pa[1] - pb[1] || pa[2].localeCompare(pb[2]);
+  });
+}
+
+function sameBase(a, b) {
+  return String(a || '').replace(/\/+$/, '') === String(b || '').replace(/\/+$/, '');
+}
+
+function isProfileActive(profile) {
+  if (!profile || !currentConfig) return false;
+  if (currentConfig.active_profile_id && currentConfig.active_profile_id === profile.id) return true;
+  if ((currentConfig.default_backend || '') !== (profile.backend || '')) return false;
+  const cfgBase = profile.backend === 'deepseek'
+    ? currentConfig.deepseek_base_url
+    : profile.backend === 'openai'
+      ? currentConfig.openai_base_url
+      : currentConfig.custom_base_url;
+  if (profile.base_url && !sameBase(cfgBase, profile.base_url)) return false;
+  const models = profileModels(profile).map(m => m.id || m.model).filter(Boolean);
+  return !models.length || models.includes(currentConfig.force_model);
+}
+
+function renderProviderCards() {
+  const grid = document.getElementById('providerCards');
+  if (!grid) return;
+  const query = String(document.getElementById('providerSearch')?.value || '').trim().toLowerCase();
+  const profiles = providerProfiles.filter(profile => {
+    const haystack = [
+      profile.label, profile.id, profile.backend, profile.base_url, profile.upstream_mode,
+      ...profileModels(profile).map(m => `${m.id || ''} ${m.display_name || ''}`),
+    ].join(' ').toLowerCase();
+    return !query || haystack.includes(query);
+  });
+  if (!profiles.length) {
+    grid.innerHTML = '<div class="log-empty" style="grid-column:1/-1">没有匹配的 provider</div>';
+    return;
+  }
+  grid.innerHTML = profiles.map(profile => {
+    const active = isProfileActive(profile);
+    const models = profileModels(profile).slice(0, 4);
+    const modelBadges = models.length
+      ? models.map(m => `<span class="mini-badge">${escapeHtml(m.display_name || m.id || m.model)}</span>`).join('')
+      : '<span class="mini-badge">No models</span>';
+    const built = profile.builtin ? '内置' : '自定义';
+    const idArg = jsArg(profile.id);
+    const deleteButton = profile.builtin ? '' : `<button class="btn btn-danger btn-sm" onclick="deleteProviderProfileById(${idArg})">删除</button>`;
+    return `
+      <div class="switch-card ${active ? 'active' : ''}">
+        <div class="switch-card-head">
+          <div style="min-width:0">
+            <div class="switch-card-title">${escapeHtml(profile.label || profile.id)}</div>
+            <div class="switch-card-meta">${escapeHtml(profile.base_url || 'local config')}</div>
+          </div>
+          <span class="mini-badge ${active ? 'active-badge' : ''}">${active ? '当前' : built}</span>
+        </div>
+        <div class="switch-card-meta">${escapeHtml(profile.backend || 'custom')} · ${escapeHtml(profile.upstream_mode || 'openai')}</div>
+        <div class="switch-card-models">${modelBadges}</div>
+        <div class="switch-card-actions">
+          <button class="btn btn-primary btn-sm" onclick="activateProviderProfileFromCard(${idArg})">切换</button>
+          <button class="btn btn-outline btn-sm" onclick="fetchModelsForProfile(${idArg})">拉模型</button>
+          ${deleteButton}
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 function updateProviderStatus(cfg) {
@@ -719,11 +932,15 @@ async function applyProviderPreset() {
 async function activateProviderProfile() {
   const id = document.getElementById('providerProfile').value;
   if (!id) { toast('请选择配置档', 'error'); return; }
+  await activateProviderProfileFromCard(id);
+}
+
+async function activateProviderProfileFromCard(id) {
   const res = await api(`/api/provider-profiles/${encodeURIComponent(id)}/activate`, { method: 'POST' });
   if (res.ok) {
     toast('配置档已应用', 'success');
-    loadConfig();
-    loadProviderProfiles();
+    await loadConfig();
+    await loadProviderProfiles();
   } else {
     toast('应用失败: ' + (res.error || ''), 'error');
   }
@@ -771,6 +988,10 @@ async function saveCurrentProfile() {
 
 async function deleteProviderProfile() {
   const id = document.getElementById('providerProfile').value;
+  await deleteProviderProfileById(id);
+}
+
+async function deleteProviderProfileById(id) {
   const profile = providerProfiles.find(p => p.id === id);
   if (!id || !profile) { toast('请选择配置档', 'error'); return; }
   if (profile.builtin) { toast('内置配置档不能删除', 'error'); return; }
@@ -780,6 +1001,61 @@ async function deleteProviderProfile() {
     loadProviderProfiles();
   } else {
     toast('删除失败: ' + (res.error || ''), 'error');
+  }
+}
+
+function providerSettingsFromProfile(profile) {
+  const backend = profile.backend || 'custom';
+  return {
+    profile_id: profile.id || '',
+    provider: backend,
+    backend,
+    api_key: '',
+    base_url: profile.base_url || '',
+    upstream_mode: profile.upstream_mode || 'openai',
+    models_url: profile.models_url || '',
+    is_full_url: !!profile.is_full_url,
+  };
+}
+
+async function fetchModelsForProfile(id) {
+  const profile = providerProfiles.find(p => p.id === id);
+  if (!profile) { toast('Provider 不存在', 'error'); return; }
+  const settings = providerSettingsFromProfile(profile);
+  document.getElementById('modelFetchProvider').value = settings.provider;
+  document.getElementById('modelsUrlOverride').value = settings.models_url || '';
+  toast(`正在拉取 ${profile.label || profile.id} 模型列表...`, 'info');
+  const res = await api('/api/fetch-models', {
+    method: 'POST',
+    body: JSON.stringify(settings)
+  });
+  if (res.ok) {
+    const preferredModels = profileModels(profile);
+    fetchedModels = rankFetchedModels(res.models || [], preferredModels);
+    renderFetchedModels(fetchedModels, preferredModels);
+    document.getElementById('modelFetchHint').textContent = `获取到 ${fetchedModels.length} 个模型；已尝试 ${Array.from(new Set(res.attempted || [])).join(' , ')}`;
+    toast(`已获取 ${fetchedModels.length} 个模型`, 'success');
+    switchTab('routing');
+  } else {
+    toast('获取失败: ' + (res.error || ''), 'error');
+    document.getElementById('switchHint').textContent = res.error || '';
+  }
+}
+
+async function fetchModelsForCurrent() {
+  const provider = currentConfig.default_backend || 'custom';
+  document.getElementById('modelFetchProvider').value = provider;
+  await fetchModels();
+  switchTab('routing');
+}
+
+async function patchCurrentModelMenu() {
+  toast('正在补丁 Claude Science 模型菜单...', 'info');
+  const patched = await api('/api/patch-model-menu', { method: 'POST' });
+  if (patched.ok) {
+    toast('菜单补丁已完成，重启 Claude Science 后生效', 'success');
+  } else {
+    toast('菜单补丁失败: ' + (patched.error || ''), 'error');
   }
 }
 
@@ -848,15 +1124,16 @@ async function saveRouting() {
   }
 }
 
-function renderFetchedModels(models) {
+function renderFetchedModels(models, preferredModels=[]) {
   const list = document.getElementById('fetchedModelList');
   if (!models || models.length === 0) {
     list.innerHTML = '<div class="log-empty">没有获取到模型</div>';
     return;
   }
+  const preferredIds = new Set(preferredModels.map(m => m.id || m.model).filter(Boolean));
   list.innerHTML = models.map((m, idx) => `
     <label class="model-row">
-      <input type="checkbox" class="fetched-model-check" value="${idx}" ${idx < 3 ? 'checked' : ''}>
+      <input type="checkbox" class="fetched-model-check" value="${idx}" ${(preferredIds.size ? preferredIds.has(m.id) : idx < 3) ? 'checked' : ''}>
       <span class="model-id">${escapeHtml(m.id)}</span>
       <span class="model-owner">${escapeHtml(m.owned_by || '')}</span>
     </label>
@@ -873,7 +1150,7 @@ async function fetchModels() {
     body: JSON.stringify({ ...settings, models_url: modelsUrl })
   });
   if (res.ok) {
-    fetchedModels = res.models || [];
+    fetchedModels = rankFetchedModels(res.models || []);
     renderFetchedModels(fetchedModels);
     document.getElementById('modelFetchHint').textContent = `获取到 ${fetchedModels.length} 个模型；已尝试 ${Array.from(new Set(res.attempted || [])).join(' , ')}`;
     toast(`已获取 ${fetchedModels.length} 个模型`, 'success');

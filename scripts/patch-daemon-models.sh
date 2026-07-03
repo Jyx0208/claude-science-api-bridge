@@ -169,7 +169,7 @@ seed = configured[0] if configured else {
     "display_name": friendly_name(default_model),
 }
 
-aliases = []
+patch_aliases = []
 for idx, slot in enumerate(slots):
     source = configured[idx] if idx < len(configured) else seed
     if menu_strategy == "custom_ids":
@@ -178,7 +178,7 @@ for idx, slot in enumerate(slots):
         alias_id = source.get("model") or source.get("id") or slot["custom_alias_id"]
     else:
         alias_id = slot["alias_id"]
-    aliases.append({
+    patch_aliases.append({
         "id": alias_id,
         "backend": source.get("backend") or default_backend,
         "model": source.get("model") or default_model,
@@ -186,8 +186,9 @@ for idx, slot in enumerate(slots):
     })
 
 changed_config = False
-if config.get("model_aliases") != aliases:
-    config["model_aliases"] = aliases
+config_aliases = patch_aliases[:len(configured)] if configured else patch_aliases
+if config.get("model_aliases") != config_aliases:
+    config["model_aliases"] = config_aliases
     changed_config = True
 if config.get("model_list_mode") != "aliases":
     config["model_list_mode"] = "aliases"
@@ -210,7 +211,7 @@ else:
 
 patches = []
 state_slots = []
-for alias, slot in zip(aliases, slots):
+for alias, slot in zip(patch_aliases, slots):
     id_len = len(slot["original_id"].encode("ascii"))
     name_len = len(slot["original_name"].encode("ascii"))
     new_id = fit_bytes(alias["id"], id_len, slot["alias_id"])
@@ -291,8 +292,12 @@ if patched:
 else:
     print(f"Already patched: {target}")
 print("Claude-facing model aliases:")
-for item in state_slots:
+for item in state_slots[:len(config_aliases)]:
     print(f"  - {item['id']} -> {item['backend']}:{item['model']} ({item['display_name']})")
+if len(state_slots) > len(config_aliases):
+    print("Daemon-only compatibility slots:")
+    for item in state_slots[len(config_aliases):]:
+        print(f"  - {item['id']} -> {item['backend']}:{item['model']} ({item['display_name']})")
 PY
 
 if command -v codesign >/dev/null 2>&1; then

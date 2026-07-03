@@ -23,7 +23,8 @@ curl -fsSL https://raw.githubusercontent.com/Jyx0208/claude-science-api-bridge/m
 - 支持流式、非流式、工具调用、工具结果、真实图片输入和基础 token 计数
 - 对支持视觉的 OpenAI 兼容模型保留图片输入；对文本模型可自动省略图片，避免后端报错
 - 自动生成 Claude Science 可接受的本地 fake OAuth token
-- 支持 cc-switch 风格的 Provider 配置档：provider、base_url、协议模式、API key、模型映射可保存和切换
+- 支持 cc-switch 风格的「切换中心」：当前配置摘要、Provider 卡片、搜索、配置档保存和一键切换
+- 支持 Provider 配置档：provider、base_url、协议模式、API key、模型映射可保存和复用
 - 支持一键从当前 Provider 拉取 `/v1/models` 模型列表，并把选中的模型应用到 Claude Science 菜单
 - 支持第三方模型菜单映射，让 Claude Science 模型选择里显示 Kimi、Qwen、GPT 等真实后端模型名
 - 可安全补丁本地 daemon 复制件，把硬编码的 Opus/Sonnet 菜单替换成 BYOK 模型菜单

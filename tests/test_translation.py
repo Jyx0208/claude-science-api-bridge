@@ -210,7 +210,7 @@ def test_profile_to_config_update_builds_menu_aliases_without_exposing_secret():
         "backend": "custom",
         "base_url": "https://api.siliconflow.cn",
         "upstream_mode": "openai",
-        "api_key": "sk-test-secret",
+        "api_key": "unit-test-secret",
         "default_model": "Pro/moonshotai/Kimi-K2.6",
         "models": [{"id": "Pro/moonshotai/Kimi-K2.6", "display_name": "Kimi K2.6 Pro++"}],
         "model_menu_strategy": "claude_compatible",
@@ -218,11 +218,46 @@ def test_profile_to_config_update_builds_menu_aliases_without_exposing_secret():
     })
     update = proxy.profile_to_config_update(profile)
 
-    assert update["custom_api_key"] == "sk-test-secret"
+    assert update["custom_api_key"] == "unit-test-secret"
     assert update["custom_base_url"] == "https://api.siliconflow.cn"
     assert update["model_aliases"][0]["id"] == "claude-opus-4-8"
     assert update["model_aliases"][0]["model"] == "Pro/moonshotai/Kimi-K2.6"
     assert update["inline_image_policy"] == "preserve"
+
+
+def test_provider_profile_lookup_keeps_real_secret_server_side():
+    with config_values(provider_profiles=[{
+        "id": "kimi-local",
+        "label": "Kimi",
+        "backend": "custom",
+        "base_url": "https://api.siliconflow.cn",
+        "upstream_mode": "openai",
+        "api_key": "unit-test-secret",
+        "default_model": "Pro/moonshotai/Kimi-K2.6",
+    }]):
+        profile = proxy.provider_profile_for_id("kimi-local")
+
+    assert profile["api_key"] == "unit-test-secret"
+    assert profile["base_url"] == "https://api.siliconflow.cn"
+
+
+def test_provider_profiles_api_masks_saved_profile_secret():
+    client = TestClient(proxy.app)
+    with config_values(provider_profiles=[{
+        "id": "kimi-local",
+        "label": "Kimi",
+        "backend": "custom",
+        "base_url": "https://api.siliconflow.cn",
+        "upstream_mode": "openai",
+        "api_key": "unit-test-secret",
+        "default_model": "Pro/moonshotai/Kimi-K2.6",
+    }]):
+        response = client.get("/api/provider-profiles")
+
+    payload = json.dumps(response.json(), ensure_ascii=False)
+    assert response.status_code == 200
+    assert "unit-test-secret" not in payload
+    assert "kimi-local" in payload
 
 
 def test_required_path_secret_protects_v1_and_does_not_log_secret():

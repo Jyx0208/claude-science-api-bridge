@@ -34,7 +34,7 @@ from typing import Optional
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -427,6 +427,7 @@ PROVIDER_PRESETS = {
         "default_model": "Pro/moonshotai/Kimi-K2.6",
         "model_aliases": [
             {"id": "claude-opus-4-8", "display_name": "Kimi K2.6 Pro++", "backend": "custom", "model": "Pro/moonshotai/Kimi-K2.6"},
+            {"id": "claude-sonnet-5", "display_name": "Kimi K2.7 Code", "backend": "custom", "model": "moonshotai/Kimi-K2.7-Code"},
         ],
     },
     "dashscope_qwen": {
@@ -746,7 +747,7 @@ def log_local_event(request: Request, status_code: int):
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
-app = FastAPI(title="Claude Science BYOK Proxy", version="2.0.0")
+app = FastAPI(title="Claude Science API Bridge", version="2.0.0")
 
 # CORS
 app.add_middleware(
@@ -2149,6 +2150,11 @@ async def dashboard():
     return FileResponse(str(STATIC_DIR / "dashboard.html"))
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(status_code=204)
+
+
 @app.get("/api/config")
 async def api_get_config():
     return config.public_dict()
@@ -2235,16 +2241,34 @@ async def api_fetch_models(request: Request):
     body, json_error = await read_json_object(request)
     if json_error:
         return {"ok": False, "error": "Request body must be valid JSON."}
-    backend = str(body.get("provider") or body.get("backend") or config.default_backend or "custom").lower()
+    profile = provider_profile_for_id(str(body.get("profile_id") or ""))
+    if body.get("profile_id") and not profile:
+        return {"ok": False, "error": "Profile not found."}
+
+    backend = str(
+        body.get("provider") or body.get("backend")
+        or (profile.get("backend") if profile else "")
+        or config.default_backend or "custom"
+    ).lower()
     if backend not in {"deepseek", "openai", "custom"}:
         backend = "custom"
     api_key = str(body.get("api_key") or "").strip()
     if not api_key or is_masked_secret(api_key):
+        api_key = str((profile or {}).get("api_key") or "").strip()
+    if not api_key or is_masked_secret(api_key):
         api_key = configured_api_key_for_backend(backend)
-    base_url = str(body.get("base_url") or config_base_for_backend(backend) or "").strip()
-    upstream_mode = str(body.get("upstream_mode") or config_mode_for_backend(backend) or "openai")
-    models_url = str(body.get("models_url") or "").strip()
-    is_full_url = bool(body.get("is_full_url") or False)
+    base_url = str(
+        body.get("base_url")
+        or (profile.get("base_url") if profile else "")
+        or config_base_for_backend(backend) or ""
+    ).strip()
+    upstream_mode = str(
+        body.get("upstream_mode")
+        or (profile.get("upstream_mode") if profile else "")
+        or config_mode_for_backend(backend) or "openai"
+    )
+    models_url = str(body.get("models_url") or (profile.get("models_url") if profile else "") or "").strip()
+    is_full_url = bool(body.get("is_full_url") or ((profile or {}).get("is_full_url")) or False)
     if not api_key:
         return {"ok": False, "error": f"No API key configured for backend '{backend}'."}
     if not base_url:
@@ -2346,6 +2370,38 @@ def profile_to_config_update(profile: dict) -> dict:
     return update
 
 
+def preset_to_provider_profile(profile_id: str, preset: dict) -> dict:
+    return normalize_provider_profile({
+        "id": profile_id,
+        "label": preset.get("label") or profile_id,
+        "backend": preset.get("backend"),
+        "base_url": preset.get("base_url"),
+        "upstream_mode": preset.get("upstream_mode"),
+        "default_model": preset.get("default_model"),
+        "models": [
+            {"id": a.get("model"), "display_name": a.get("display_name")}
+            for a in preset.get("model_aliases", [])
+        ],
+        "model_menu_strategy": "claude_compatible",
+    })
+
+
+def provider_profile_for_id(profile_id: str) -> Optional[dict]:
+    profile_id = str(profile_id or "").strip()
+    if not profile_id:
+        return None
+    preset = PROVIDER_PRESETS.get(profile_id)
+    if preset:
+        return preset_to_provider_profile(profile_id, preset)
+    found = next(
+        (p for p in (config.provider_profiles or []) if isinstance(p, dict) and p.get("id") == profile_id),
+        None,
+    )
+    if not found:
+        return None
+    return normalize_provider_profile(found)
+
+
 @app.get("/api/provider-profiles")
 async def api_provider_profiles():
     profiles = []
@@ -2408,26 +2464,9 @@ async def api_delete_provider_profile(profile_id: str):
 
 @app.post("/api/provider-profiles/{profile_id}/activate")
 async def api_activate_provider_profile(profile_id: str):
-    preset = PROVIDER_PRESETS.get(profile_id)
-    if preset:
-        profile = normalize_provider_profile({
-            "id": profile_id,
-            "label": preset.get("label") or profile_id,
-            "backend": preset.get("backend"),
-            "base_url": preset.get("base_url"),
-            "upstream_mode": preset.get("upstream_mode"),
-            "default_model": preset.get("default_model"),
-            "models": [
-                {"id": a.get("model"), "display_name": a.get("display_name")}
-                for a in preset.get("model_aliases", [])
-            ],
-            "model_menu_strategy": "claude_compatible",
-        })
-    else:
-        found = next((p for p in (config.provider_profiles or []) if isinstance(p, dict) and p.get("id") == profile_id), None)
-        if not found:
-            return {"ok": False, "error": "Profile not found"}
-        profile = normalize_provider_profile(found)
+    profile = provider_profile_for_id(profile_id)
+    if not profile:
+        return {"ok": False, "error": "Profile not found"}
     config.update(profile_to_config_update(profile))
     return {"ok": True, "active_profile_id": profile_id}
 
