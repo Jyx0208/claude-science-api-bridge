@@ -2,10 +2,13 @@
 
 让 Claude Science 安全接入 DeepSeek、OpenAI、硅基流动 Kimi 与任意 OpenAI 兼容第三方 API 的本地代理和 agent 配置手册。
 
+最新 macOS 一键安装包：[`Claude Science API Bridge.dmg`](https://github.com/Jyx0208/claude-science-api-bridge/releases/latest)
+
 这个项目不只是一个代理程序，也是一份给 AI agent 读取的操作说明书。把仓库交给 Codex、Claude Code 或其他本地 agent 后，它可以先读 `AGENTS.md` 和 `docs/agent-runbook.md`，再按步骤完成诊断、安装、配置和验证。
 
 ## 功能
 
+- 提供 macOS `.app + .dmg` 一键安装包，首次打开即可选择 provider 并写入本地配置
 - 在本机启动 Anthropic 兼容接口：`http://127.0.0.1:9876`
 - 将 Claude Science 的 Anthropic Messages API 请求转换为 OpenAI Chat Completions 请求
 - 将 DeepSeek、OpenAI 或其他 OpenAI 兼容接口的响应转换回 Anthropic 格式
@@ -348,6 +351,7 @@ curl -sS http://127.0.0.1:9876/api/recent-requests
 
 ```bash
 ./scripts/build-macos-release.sh
+./scripts/smoke-test-release-package.sh
 ```
 
 产物位于：

@@ -13,6 +13,7 @@
 
 ```bash
 ./scripts/build-macos-release.sh
+./scripts/smoke-test-release-package.sh
 ```
 
 输出：
@@ -71,8 +72,10 @@ API key 只写入本机 `~/.claude-science/proxy/config.json`，权限为 `0600`
 
 ```bash
 ./scripts/self-test.sh
-./scripts/build-macos-release.sh
+./scripts/smoke-test-release-package.sh
 git status --ignored
 ```
 
 确认 `dist/` 是 ignored，且 `config.json`、`certs/` 没有被暂存。
+
+`smoke-test-release-package.sh` 会使用临时 HOME 运行 `.app` 内的 launcher，模拟首次选择 SiliconFlow Kimi 并生成本地配置。它不会启动真实 Claude Science、不会写真实 `~/.claude-science/proxy/config.json`，也不会触碰网络代理设置。

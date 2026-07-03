@@ -14,10 +14,18 @@ exec >>"$LOG_FILE" 2>&1
 echo "==== Claude Science API Bridge launch $(date) ===="
 
 alert() {
+  if [ "${BRIDGE_NONINTERACTIVE:-0}" = "1" ]; then
+    echo "[alert] $1"
+    return
+  fi
   /usr/bin/osascript -e "display dialog \"$1\" buttons {\"OK\"} default button \"OK\" with title \"Claude Science API Bridge\"" >/dev/null 2>&1 || true
 }
 
 notify() {
+  if [ "${BRIDGE_NONINTERACTIVE:-0}" = "1" ]; then
+    echo "[notify] $1"
+    return
+  fi
   /usr/bin/osascript -e "display notification \"$1\" with title \"Claude Science API Bridge\"" >/dev/null 2>&1 || true
 }
 
@@ -33,6 +41,10 @@ ask_text() {
 }
 
 choose_provider() {
+  if [ -n "${BRIDGE_PROVIDER:-}" ]; then
+    printf '%s\n' "$BRIDGE_PROVIDER"
+    return
+  fi
   /usr/bin/osascript <<'OSA'
 set choices to {"SiliconFlow Kimi", "DeepSeek", "OpenAI", "Custom"}
 set picked to choose from list choices with prompt "请选择第三方 API Provider" default items {"SiliconFlow Kimi"} with title "Claude Science API Bridge"
@@ -106,7 +118,10 @@ PY
     exit 0
   fi
 
-  api_key="$(ask_text "请输入你的 $provider API Key。它只会保存到本机 config.json，不会显示在日志里。" "" 1)"
+  api_key="${BRIDGE_API_KEY:-}"
+  if [ -z "$api_key" ]; then
+    api_key="$(ask_text "请输入你的 $provider API Key。它只会保存到本机 config.json，不会显示在日志里。" "" 1)"
+  fi
   if [ -z "$api_key" ]; then
     alert "API Key 为空，已取消配置。"
     exit 0
@@ -139,11 +154,13 @@ PY
       ;;
     *)
       backend="custom"
-      base_url="$(ask_text "请输入 OpenAI-compatible Base URL" "https://provider.example.com" 0)"
-      model="$(ask_text "请输入实际模型名" "provider-model-name" 0)"
+      base_url="${BRIDGE_BASE_URL:-}"
+      model="${BRIDGE_MODEL:-}"
+      [ -n "$base_url" ] || base_url="$(ask_text "请输入 OpenAI-compatible Base URL" "https://provider.example.com" 0)"
+      [ -n "$model" ] || model="$(ask_text "请输入实际模型名" "provider-model-name" 0)"
       mode="openai"
       inline_policy="auto"
-      display_name="$model"
+      display_name="${BRIDGE_DISPLAY_NAME:-$model}"
       ;;
   esac
 
@@ -204,6 +221,12 @@ main() {
   configure_if_needed "$python_bin"
 
   cd "$INSTALL_DIR"
+  if [ "${BRIDGE_DRY_RUN:-0}" = "1" ]; then
+    echo "BRIDGE_DRY_RUN=1; skipped install-safe/start-claude-science."
+    alert "干跑完成。发布包可以同步资源并生成本地配置。"
+    exit 0
+  fi
+
   PYTHON="$python_bin" ./scripts/install-safe.sh
 
   /usr/bin/open "http://127.0.0.1:9876/dashboard" >/dev/null 2>&1 || true

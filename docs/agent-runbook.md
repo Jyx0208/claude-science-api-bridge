@@ -282,7 +282,7 @@ Run:
 
 ```bash
 ./scripts/self-test.sh
-./scripts/build-macos-release.sh
+./scripts/smoke-test-release-package.sh
 git status --ignored
 ```
 
