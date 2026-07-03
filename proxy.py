@@ -103,6 +103,9 @@ class Config:
         "custom_model_pattern": "",
         "reasoning_content_policy": "never",
         "inline_image_policy": "auto",
+        "image_fallback_mode": "auto",
+        "image_fallback_backend": "",
+        "image_fallback_model": "",
         "proxy_host": "127.0.0.1",
         "proxy_port": 9876,
     }
@@ -136,6 +139,9 @@ class Config:
         "custom_model_pattern": "CUSTOM_MODEL_PATTERN",
         "reasoning_content_policy": "REASONING_CONTENT_POLICY",
         "inline_image_policy": "INLINE_IMAGE_POLICY",
+        "image_fallback_mode": "IMAGE_FALLBACK_MODE",
+        "image_fallback_backend": "IMAGE_FALLBACK_BACKEND",
+        "image_fallback_model": "IMAGE_FALLBACK_MODEL",
         "proxy_host": "PROXY_HOST",
         "proxy_port": "PROXY_PORT",
     }
@@ -851,6 +857,36 @@ def recommended_inline_image_policy(backend: str, models=None, fallback: str = "
     return fallback if fallback in {"auto", "preserve", "omit", "omit_inline"} else "auto"
 
 
+def anthropic_body_has_images(body: dict) -> bool:
+    """Return True if a Messages request contains image input blocks."""
+    if not isinstance(body, dict):
+        return False
+    messages = body.get("messages") or []
+    if not isinstance(messages, list):
+        return False
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") in {"image", "image_url"}:
+                return True
+    return False
+
+
+def backend_accepts_image_input(backend: dict) -> bool:
+    """Conservative model capability check for direct image input."""
+    if not isinstance(backend, dict):
+        return False
+    if str(backend.get("backend") or "").lower() == "deepseek":
+        return False
+    return model_supports_vision_input(backend.get("model"))
+
+
 def normalize_model_entries(raw_models) -> list[dict]:
     if isinstance(raw_models, str):
         raw_models = [m.strip() for m in raw_models.splitlines() if m.strip()]
@@ -897,6 +933,94 @@ def build_aliases_from_models(raw_models, backend: str, strategy: str = "claude_
     return aliases
 
 
+def _profile_api_key(profile: dict, backend: str) -> str:
+    value = str((profile or {}).get("api_key") or "").strip()
+    if value and not is_masked_secret(value):
+        return value
+    return configured_api_key_for_backend(backend)
+
+
+def _vision_fallback_candidates() -> list[dict]:
+    candidates: list[dict] = []
+
+    explicit_backend = str(config.get("image_fallback_backend") or "").strip().lower()
+    explicit_model = str(config.get("image_fallback_model") or "").strip()
+    if explicit_backend and explicit_model:
+        item = backend_descriptor(explicit_backend, explicit_model, source="explicit")
+        if item and backend_accepts_image_input(item):
+            candidates.append(item)
+
+    for alias in normalized_model_aliases(config.model_aliases):
+        backend = str(alias.get("backend") or "").strip().lower()
+        model = str(alias.get("model") or "").strip()
+        if not backend_accepts_image_input({"backend": backend, "model": model}):
+            continue
+        item = backend_descriptor(backend, model, source="alias")
+        if item:
+            candidates.append(item)
+
+    for profile in config.provider_profiles or []:
+        if not isinstance(profile, dict):
+            continue
+        backend = str(profile.get("backend") or "").strip().lower()
+        base_url = str(profile.get("base_url") or "").strip()
+        mode = str(profile.get("upstream_mode") or "").strip()
+        api_key = _profile_api_key(profile, backend)
+        raw_models = profile.get("models") or profile.get("model_aliases") or []
+        for model_info in normalize_model_entries(raw_models):
+            model = model_info["model"]
+            if not backend_accepts_image_input({"backend": backend, "model": model}):
+                continue
+            item = backend_descriptor(
+                backend,
+                model,
+                base_url=base_url,
+                api_key=api_key,
+                upstream_mode=mode,
+                source=f"profile:{profile.get('id') or profile.get('label') or backend}",
+            )
+            if item:
+                candidates.append(item)
+
+    for backend, model in (
+        ("custom", config.force_model),
+        ("openai", "gpt-4o"),
+    ):
+        if not backend_accepts_image_input({"backend": backend, "model": model}):
+            continue
+        item = backend_descriptor(backend, model, source="default")
+        if item:
+            candidates.append(item)
+
+    deduped = []
+    seen = set()
+    for item in candidates:
+        key = (item["backend"], item["base_url"], item["model"])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
+def resolve_image_fallback_backend(original_backend: dict) -> Optional[dict]:
+    """Pick a configured vision model when the selected backend cannot read images."""
+    mode = str(config.get("image_fallback_mode") or "auto").strip().lower()
+    if mode in {"off", "disabled", "none"}:
+        return None
+    if backend_accepts_image_input(original_backend):
+        return None
+    for item in _vision_fallback_candidates():
+        if (
+            item["backend"] == original_backend.get("backend")
+            and item["base_url"] == original_backend.get("base_url")
+            and item["model"] == original_backend.get("model")
+        ):
+            continue
+        return item
+    return None
+
+
 def config_key_for_backend(backend: str) -> str:
     backend = (backend or "").lower()
     if backend == "deepseek":
@@ -926,6 +1050,45 @@ def config_mode_for_backend(backend: str) -> str:
 
 def configured_api_key_for_backend(backend: str) -> str:
     return str(config.get(config_key_for_backend(backend)) or "")
+
+
+def configured_base_url_for_backend(backend: str) -> str:
+    return str(config_base_for_backend(backend) or "")
+
+
+def configured_mode_for_backend(backend: str) -> str:
+    return normalize_upstream_mode(config_mode_for_backend(backend))
+
+
+def backend_descriptor(
+    backend: str,
+    model: str,
+    *,
+    base_url: str = "",
+    api_key: str = "",
+    upstream_mode: str = "",
+    source: str = "",
+) -> Optional[dict]:
+    backend = (backend or "").strip().lower()
+    model = str(model or "").strip()
+    if backend not in {"deepseek", "openai", "custom"} or not model:
+        return None
+    key = str(api_key or configured_api_key_for_backend(backend) or "").strip()
+    raw_base = str(base_url or configured_base_url_for_backend(backend) or "").strip()
+    mode = normalize_upstream_mode(upstream_mode or configured_mode_for_backend(backend))
+    if not key:
+        return None
+    normalized_base = normalize_backend_base_url(raw_base, mode)
+    if not normalized_base:
+        return None
+    return {
+        "backend": backend,
+        "model": model,
+        "api_key": key,
+        "base_url": normalized_base,
+        "mode": mode,
+        "source": source,
+    }
 
 
 def is_masked_secret(value: str) -> bool:
@@ -1793,11 +1956,13 @@ def anthropic_to_openai(
     backend_model: str,
     backend_name: str = "",
     backend_base_url: str = "",
+    image_policy_override: Optional[str] = None,
 ) -> dict:
     """Convert Anthropic Messages API request → OpenAI Chat Completions format."""
     openai_messages = []
     backend_name = backend_name.lower()
-    image_policy = _image_policy_for_backend(backend_name, backend_base_url)
+    override = str(image_policy_override or "").strip().lower()
+    image_policy = override if override in {"preserve", "omit", "omit_inline"} else _image_policy_for_backend(backend_name, backend_base_url)
 
     # System prompt
     system = anthropic_body.get("system")
@@ -2316,6 +2481,19 @@ async def messages_api(request: Request):
     except ValueError as e:
         return JSONResponse({"type": "error", "error": {"type": "api_error", "message": str(e)}}, status_code=400)
 
+    image_policy_override = None
+    if anthropic_body_has_images(body):
+        fallback_backend = resolve_image_fallback_backend(backend)
+        if fallback_backend:
+            print(
+                f"[proxy] image fallback | original_backend={backend['backend']} "
+                f"original_model={backend['model']} -> backend={fallback_backend['backend']} "
+                f"model={fallback_backend['model']} source={fallback_backend.get('source', '')}",
+                flush=True,
+            )
+            backend = fallback_backend
+            image_policy_override = "preserve"
+
     stream = body.get("stream", False)
     request_id = f"msg_{uuid.uuid4().hex[:16]}"
     tool_name_lookup = build_tool_name_lookup(body)
@@ -2373,7 +2551,13 @@ async def messages_api(request: Request):
             safe_msg = str(e).encode("ascii", errors="replace").decode("ascii")
             return JSONResponse({"type": "error", "error": {"type": "api_error", "message": safe_msg}}, status_code=502)
 
-    openai_body = anthropic_to_openai(body, backend["model"], backend["backend"], backend["base_url"])
+    openai_body = anthropic_to_openai(
+        body,
+        backend["model"],
+        backend["backend"],
+        backend["base_url"],
+        image_policy_override=image_policy_override,
+    )
 
     print(f"[proxy] → {backend['backend']} | model={backend['model']} | "
           f"stream={stream} | original_model={original_model}")
@@ -3315,6 +3499,9 @@ async def health():
         "proxy_auth_mode": config.proxy_auth_mode,
         "proxy_auth_configured": bool(config.proxy_auth_token),
         "inline_image_policy": config.inline_image_policy,
+        "image_fallback_mode": config.get("image_fallback_mode", "auto"),
+        "image_fallback_backend": config.get("image_fallback_backend", ""),
+        "image_fallback_model": config.get("image_fallback_model", ""),
         "proxy_dir": str(PROXY_DIR),
     }
 

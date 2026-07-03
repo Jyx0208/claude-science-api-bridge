@@ -252,11 +252,13 @@ Claude Science 的模型选择界面有一部分来自本地 daemon 的硬编码
 
 Claude Science 发出的 Anthropic 图片 block 会被代理转换成 OpenAI 兼容的 `image_url` 内容。只要后端模型本身支持视觉输入，就可以真正读图。
 
+如果用户在 Claude Science 里选择的是 DeepSeek 或其它文本模型，但请求里包含图片，代理会在 `image_fallback_mode=auto` 时自动切到已配置的视觉模型处理这一次请求。推荐把 `image_fallback_backend=custom`、`image_fallback_model=Pro/moonshotai/Kimi-K2.6`，这样 DeepSeek 文本请求仍走 DeepSeek，带图请求不会因为 DeepSeek text-only 而报错。
+
 `inline_image_policy` 支持：
 
 | 策略 | 行为 | 适用场景 |
 | --- | --- | --- |
-| `auto` | DeepSeek 等文本后端省略图片，Custom/OpenAI 后端保留图片 | 不确定模型能力时 |
+| `auto` | 文本后端可触发视觉 fallback，Custom/OpenAI 后端按模型能力保留图片 | 不确定模型能力时 |
 | `preserve` | 始终发送图片 | Kimi K2.6、GPT-4o、Qwen3-VL 等视觉模型 |
 | `omit` | 始终省略图片 | 纯文本便宜模型 |
 | `omit_inline` | 只省略 base64 内联图片，保留外部图片 URL | 后端不接受大 base64 时 |
@@ -269,7 +271,7 @@ Claude Science 发出的 Anthropic 图片 block 会被代理转换成 OpenAI 兼
 VERIFY_IMAGE=1 ./scripts/verify-proxy.sh
 ```
 
-如果模型不支持视觉输入，这一步应失败。需要换成支持视觉的模型，或把图片策略改回 `omit`。
+如果当前选择的模型不支持视觉输入，且没有配置可用的视觉 fallback，这一步应失败。需要配置支持视觉的模型，或把图片策略改回 `omit`。
 
 ## 本地 path-secret
 

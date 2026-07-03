@@ -194,6 +194,73 @@ def test_model_capability_detection_recognizes_current_vision_models():
     assert not proxy.model_supports_vision_input("baidu/ERNIE-Image-Turbo")
 
 
+def test_deepseek_image_request_falls_back_to_configured_vision_alias():
+    body = {
+        "model": "claude-opus-4-8",
+        "max_tokens": 32,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What color is this image?"},
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": "iVBORw0KGgo=",
+                    },
+                },
+            ],
+        }],
+    }
+
+    with config_values(
+        default_backend="deepseek",
+        deepseek_api_key="deepseek-key",
+        deepseek_base_url="https://api.deepseek.com",
+        deepseek_upstream_mode="openai",
+        custom_api_key="vision-key",
+        custom_base_url="https://api.siliconflow.cn",
+        custom_upstream_mode="openai",
+        inline_image_policy="omit",
+        image_fallback_mode="auto",
+        image_fallback_backend="",
+        image_fallback_model="",
+        model_aliases=[
+            {
+                "id": "claude-opus-4-8",
+                "display_name": "DeepSeek V4 Pro",
+                "backend": "deepseek",
+                "model": "deepseek-v4-pro",
+            },
+            {
+                "id": "claude-sonnet-5",
+                "display_name": "Kimi K2.6 Pro++",
+                "backend": "custom",
+                "model": "Pro/moonshotai/Kimi-K2.6",
+            },
+        ],
+    ):
+        backend = proxy.config.resolve_backend("claude-opus-4-8")
+        fallback = proxy.resolve_image_fallback_backend(backend)
+        converted = proxy.anthropic_to_openai(
+            body,
+            fallback["model"],
+            fallback["backend"],
+            fallback["base_url"],
+            image_policy_override="preserve",
+        )
+
+    assert proxy.anthropic_body_has_images(body)
+    assert backend["backend"] == "deepseek"
+    assert fallback["backend"] == "custom"
+    assert fallback["model"] == "Pro/moonshotai/Kimi-K2.6"
+    assert converted["model"] == "Pro/moonshotai/Kimi-K2.6"
+    content = converted["messages"][0]["content"]
+    assert isinstance(content, list)
+    assert any(part.get("type") == "image_url" for part in content)
+
+
 def test_apply_models_auto_preserves_images_for_vision_model():
     client = TestClient(proxy.app)
     old_save = proxy.config.save

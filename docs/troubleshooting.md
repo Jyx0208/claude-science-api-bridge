@@ -207,11 +207,13 @@ If Claude Science displays text such as `The user said...`, `The session was res
 
 ## Image Input Fails
 
-First check whether the backend model actually supports vision input. Text-only models should use:
+First check whether the backend model actually supports vision input. Text-only models can either omit images or use a configured vision fallback.
 
 ```json
 {
-  "inline_image_policy": "omit"
+  "image_fallback_mode": "auto",
+  "image_fallback_backend": "custom",
+  "image_fallback_model": "Pro/moonshotai/Kimi-K2.6"
 }
 ```
 
@@ -228,6 +230,8 @@ Then run:
 ```bash
 VERIFY_IMAGE=1 ./scripts/verify-proxy.sh
 ```
+
+If a DeepSeek request contains images, the proxy should log an image fallback and route that single request to the configured vision model instead of sending image blocks to DeepSeek directly.
 
 For SiliconFlow Kimi, inline PNG/WebP/GIF/HEIC images are converted locally to JPEG data URLs before sending to the provider. Very tiny or malformed images may still be rejected by the provider; test with a normal screenshot or the generated verification image.
 

@@ -39,6 +39,9 @@
   "custom_model_pattern": "",
   "reasoning_content_policy": "never",
   "inline_image_policy": "auto",
+  "image_fallback_mode": "auto",
+  "image_fallback_backend": "",
+  "image_fallback_model": "",
   "proxy_host": "127.0.0.1",
   "proxy_port": 9876
 }
