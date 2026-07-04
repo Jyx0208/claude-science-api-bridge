@@ -389,6 +389,7 @@
         <div class="now-actions">
           <button class="btn primary" onclick="runTest()" id="testBtn">▶ 一键测试</button>
           <button class="btn" onclick="openClaudeScience()">↗ 打开 Claude Science</button>
+          <button class="btn" onclick="restartClaudeScience()" id="restartClaudeBtn">⟳ 重启 Claude Science</button>
           <button class="btn" onclick="patchMenu()">◫ 补丁菜单</button>
         </div>
       </div>
@@ -509,6 +510,7 @@
         <div class="panel-body">
           <div class="btn-row" style="margin-bottom:14px">
             <button class="btn" onclick="patchMenu()">◫ 补丁模型菜单</button>
+            <button class="btn" onclick="restartClaudeScience()" id="restartClaudeBtnAdvanced">⟳ 重启 Claude Science</button>
             <button class="btn" onclick="setGlobalEnv()">⚙ 设置全局 ANTHROPIC_BASE_URL</button>
             <button class="btn" onclick="installService()">↻ 安装 LaunchAgent</button>
             <button class="btn" onclick="refreshToken()">⟳ 刷新 OAuth Token</button>
@@ -1348,6 +1350,23 @@ async function openClaudeScience() {
   toast('正在打开 Claude Science…', 'info');
   const res = await api('/api/open-claude-science', { method: 'POST' });
   if (res.ok) toast('已发送打开指令', 'success'); else toast('打开失败：' + (res.error || ''), 'error');
+}
+async function restartClaudeScience() {
+  const btns = ['restartClaudeBtn', 'restartClaudeBtnAdvanced'].map(id => $(id)).filter(Boolean);
+  btns.forEach(btn => { btn.disabled = true; btn.dataset.oldText = btn.textContent; btn.textContent = '重启中…'; });
+  toast('正在重启 Claude Science…', 'info');
+  try {
+    const res = await api('/api/restart-claude-science', { method: 'POST' });
+    if (res.ok) {
+      toast('Claude Science 已重启', 'success');
+      await loadHealth();
+      await loadLogs();
+    } else {
+      toast('重启失败：' + (res.error || ''), 'error');
+    }
+  } finally {
+    btns.forEach(btn => { btn.disabled = false; btn.textContent = btn.dataset.oldText || '⟳ 重启 Claude Science'; });
+  }
 }
 async function patchMenu() {
   toast('正在补丁模型菜单…', 'info');

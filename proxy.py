@@ -3265,6 +3265,39 @@ async def api_open_claude_science():
         return {"ok": False, "error": str(e)}
 
 
+@app.post("/api/restart-claude-science")
+async def api_restart_claude_science():
+    """Restart Claude Science through the safe local startup script."""
+    if sys.platform != "darwin":
+        return {"ok": False, "error": "Claude Science desktop restart is macOS-only."}
+    script = PROXY_DIR / "scripts" / "start-claude-science.sh"
+    if not script.exists():
+        return {"ok": False, "error": f"Start script not found: {script}"}
+    try:
+        result = subprocess.run(
+            [str(script)],
+            cwd=str(PROXY_DIR),
+            env={**os.environ, "PYTHON": sys.executable},
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+        output = "\n".join(
+            line for line in [result.stdout.strip(), result.stderr.strip()] if line
+        )
+        if result.returncode == 0:
+            return {"ok": True, "output": output[-1200:]}
+        return {
+            "ok": False,
+            "error": (output or f"restart exited with code {result.returncode}")[-1200:],
+            "returncode": result.returncode,
+        }
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "Restart timed out after 90 seconds."}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.post("/api/test-backend")
 async def api_test_backend(request: Request):
     """Test connectivity to a backend provider."""
