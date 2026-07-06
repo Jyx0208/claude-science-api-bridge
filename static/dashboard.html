@@ -522,6 +522,19 @@ open -a "Claude Science"</span></div></div>
       </div>
 
       <div class="panel">
+        <div class="panel-head"><div class="panel-title"><span class="ico">⇆</span> CC Switch · Claude Science</div><span class="panel-sub">独立于 Claude Desktop</span></div>
+        <div class="panel-body">
+          <div class="result-box show" id="ccswitchResult" style="display:block;margin:0 0 12px"></div>
+          <div class="btn-row">
+            <button class="btn primary sm" onclick="syncCcSwitchScience()" id="syncCcSwitchBtn">同步 Claude Science 配置</button>
+            <button class="btn sm" onclick="openCcSwitch()">打开 CC Switch</button>
+            <button class="btn sm" onclick="loadCcSwitchStatus(true)">刷新状态</button>
+          </div>
+          <div class="hint" style="margin-top:10px;color:var(--text-faint);font-size:12px">当前官方 CC Switch 需要源码补丁后才会显示 <code>Claude Science</code> 独立面板；这里写入的是 <code>app_type=claude-science</code>，不会影响 Claude Desktop 或 Claude Code。</div>
+        </div>
+      </div>
+
+      <div class="panel">
         <div class="panel-head"><div class="panel-title"><span class="ico">↑</span> 版本与更新</div><span class="panel-sub" id="updatePanelSub">检查 GitHub Release</span></div>
         <div class="panel-body">
           <div class="grid-fields">
@@ -710,6 +723,7 @@ function go(view) {
   if (view === 'logs') loadLogs();
   if (view === 'advanced') renderRawConfig();
   if (view === 'advanced') renderUpdateInfo();
+  if (view === 'advanced') loadCcSwitchStatus(false);
   if (view === 'models') renderCurrentMapping();
   window.scrollTo(0, 0);
 }
@@ -1418,6 +1432,49 @@ async function refreshToken() { toast('正在刷新 OAuth Token…', 'info'); co
 function copyStartCmd() { navigator.clipboard.writeText($('startCmdText').textContent).then(() => toast('已复制', 'success')); }
 function renderRawConfig() { $('rawConfig').textContent = JSON.stringify(currentConfig, null, 2); }
 function copyRawConfig() { navigator.clipboard.writeText(JSON.stringify(currentConfig, null, 2)).then(() => toast('已复制原始配置', 'success')); }
+
+async function loadCcSwitchStatus(showToast = false) {
+  const box = $('ccswitchResult');
+  if (!box) return;
+  try {
+    const res = await api('/api/ccswitch-status');
+    box.className = 'result-box show ' + (res.ok ? 'ok' : 'bad');
+    if (res.ok) {
+      const rows = res.rows || [];
+      const science = rows.find(r => r.app_type === 'claude-science');
+      box.innerHTML = `<strong>${science ? '已同步 Claude Science 数据' : '尚未同步 Claude Science 数据'}</strong><div class="rtxt">${escapeHtml(res.native_note || '当前 CC Switch 需要 Claude Science 专用源码补丁后才能显示独立面板。')}</div>`;
+      if (showToast) toast('CC Switch 状态已刷新', 'success');
+    } else {
+      box.innerHTML = `<strong>无法读取 CC Switch</strong><div class="rtxt">${escapeHtml(res.error || '')}</div>`;
+      if (showToast) toast('读取 CC Switch 失败', 'error');
+    }
+  } catch (e) {
+    box.className = 'result-box show bad';
+    box.innerHTML = `<strong>无法读取 CC Switch</strong><div class="rtxt">${escapeHtml(String(e))}</div>`;
+  }
+}
+async function syncCcSwitchScience() {
+  const btn = $('syncCcSwitchBtn');
+  if (btn) { btn.disabled = true; btn.dataset.oldText = btn.textContent; btn.textContent = '同步中…'; }
+  toast('正在同步 Claude Science 配置到 CC Switch 数据库…', 'info');
+  try {
+    const res = await api('/api/ccswitch-sync', { method: 'POST', body: JSON.stringify({ app_type: 'claude-science', activate: true }) });
+    if (res.ok) {
+      toast('已同步 Claude Science 配置', 'success');
+      await loadCcSwitchStatus(false);
+    } else {
+      toast('同步失败：' + (res.error || ''), 'error');
+      await loadCcSwitchStatus(false);
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = btn.dataset.oldText || '同步 Claude Science 配置'; }
+  }
+}
+async function openCcSwitch() {
+  toast('正在打开 CC Switch…', 'info');
+  const res = await api('/api/open-ccswitch', { method: 'POST' });
+  if (res.ok) toast('已发送打开指令', 'success'); else toast('打开失败：' + (res.error || ''), 'error');
+}
 
 // ════════════════════════ Logs ════════════════════════
 async function loadLogs() { try { logsCache = (await api('/api/recent-requests')).requests || []; renderLogs(); } catch (e) {} }

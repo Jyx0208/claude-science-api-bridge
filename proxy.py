@@ -3165,6 +3165,119 @@ def provider_profile_for_id(profile_id: str) -> Optional[dict]:
     return normalize_provider_profile(found)
 
 
+def _first_non_empty(mapping: dict, keys: list[str]) -> str:
+    if not isinstance(mapping, dict):
+        return ""
+    for key in keys:
+        value = str(mapping.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _strip_model_suffix(model: str) -> str:
+    value = str(model or "").strip()
+    return re.sub(r"\s*\[1m\]\s*$", "", value, flags=re.I).strip()
+
+
+def ccswitch_provider_to_profile(raw: dict) -> dict:
+    if not isinstance(raw, dict):
+        raise ValueError("Provider must be an object")
+    settings = raw.get("settingsConfig") or raw.get("settings_config") or {}
+    if isinstance(settings, str):
+        try:
+            settings = json.loads(settings)
+        except Exception:
+            settings = {}
+    env = settings.get("env") if isinstance(settings, dict) else {}
+    env = env if isinstance(env, dict) else {}
+    meta = raw.get("meta") or {}
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except Exception:
+            meta = {}
+    meta = meta if isinstance(meta, dict) else {}
+
+    base_url = _first_non_empty(env, ["ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "BASE_URL"])
+    api_key = _first_non_empty(
+        env,
+        [
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "OPENROUTER_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+        ],
+    )
+    if "127.0.0.1:9876" in base_url or "localhost:9876" in base_url:
+        raise ValueError("This CC Switch provider points back to the Bridge itself, not an upstream provider.")
+    if not base_url:
+        raise ValueError("Provider is missing ANTHROPIC_BASE_URL.")
+    if not api_key or is_masked_secret(api_key):
+        raise ValueError("Provider is missing a usable API key.")
+
+    api_format = str(meta.get("apiFormat") or meta.get("api_format") or "").strip().lower()
+    upstream_mode = "anthropic" if api_format in {"anthropic", "native", "passthrough"} else "openai"
+    lowered_base = base_url.lower()
+    if "api.deepseek.com" in lowered_base:
+        backend = "deepseek"
+    elif "api.openai.com" in lowered_base:
+        backend = "openai"
+    else:
+        backend = "custom"
+
+    raw_models = [
+        env.get("ANTHROPIC_MODEL"),
+        env.get("ANTHROPIC_DEFAULT_OPUS_MODEL"),
+        env.get("ANTHROPIC_DEFAULT_SONNET_MODEL"),
+        env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL"),
+        env.get("ANTHROPIC_DEFAULT_FABLE_MODEL"),
+    ]
+    seen = set()
+    models = []
+    for model in raw_models:
+        model = _strip_model_suffix(model)
+        if not model or model in seen:
+            continue
+        seen.add(model)
+        models.append({"id": model, "model": model, "display_name": display_name_for_model(model)})
+    if not models:
+        raise ValueError("Provider is missing a model in ANTHROPIC_MODEL or default model env vars.")
+
+    provider_id = str(raw.get("id") or uuid.uuid4().hex[:8]).strip()
+    profile_id = str(meta.get("bridgeProfileId") or meta.get("bridge_profile_id") or "").strip()
+    if not profile_id and provider_id.startswith("claude-science-profile-"):
+        profile_id = provider_id[len("claude-science-profile-"):]
+    if not profile_id:
+        profile_id = "ccswitch-" + re.sub(r"[^A-Za-z0-9_.-]+", "-", provider_id).strip("-")
+    return normalize_provider_profile({
+        "id": profile_id,
+        "label": str(raw.get("name") or provider_id or "CC Switch Provider").strip(),
+        "backend": backend,
+        "base_url": base_url,
+        "upstream_mode": upstream_mode,
+        "api_key": api_key,
+        "default_model": models[0]["model"],
+        "models": models,
+        "model_menu_strategy": "claude_compatible",
+        "inline_image_policy": str(meta.get("inlineImagePolicy") or meta.get("inline_image_policy") or "auto"),
+    })
+
+
+def activate_provider_profile(profile: dict) -> dict:
+    profiles = [
+        p for p in (config.provider_profiles or [])
+        if isinstance(p, dict) and p.get("id") != profile["id"]
+    ]
+    profiles.append(profile)
+    update = profile_to_config_update(profile)
+    update["provider_profiles"] = profiles
+    config.update(update)
+    return update
+
+
 @app.get("/api/provider-profiles")
 async def api_provider_profiles():
     profiles = []
@@ -3231,8 +3344,49 @@ async def api_activate_provider_profile(profile_id: str):
     profile = provider_profile_for_id(profile_id)
     if not profile:
         return {"ok": False, "error": "Profile not found"}
-    config.update(profile_to_config_update(profile))
+    activate_provider_profile(profile)
     return {"ok": True, "active_profile_id": profile_id}
+
+
+@app.post("/api/ccswitch/apply-provider")
+async def api_ccswitch_apply_provider(request: Request):
+    body, json_error = await read_json_object(request)
+    if json_error:
+        return {"ok": False, "error": "Request body must be valid JSON."}
+    provider = body.get("provider") if isinstance(body, dict) and isinstance(body.get("provider"), dict) else body
+    try:
+        profile = ccswitch_provider_to_profile(provider)
+        activate_provider_profile(profile)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+    restart = bool(isinstance(body, dict) and body.get("restart"))
+    restart_result = None
+    if restart and sys.platform == "darwin":
+        script = PROXY_DIR / "scripts" / "start-claude-science.sh"
+        try:
+            result = subprocess.run(
+                [str(script)],
+                cwd=str(PROXY_DIR),
+                env={**os.environ, "PYTHON": sys.executable},
+                capture_output=True,
+                text=True,
+                timeout=90,
+            )
+            restart_result = {
+                "ok": result.returncode == 0,
+                "returncode": result.returncode,
+                "output": "\n".join(x for x in [result.stdout.strip(), result.stderr.strip()] if x)[-1200:],
+            }
+        except Exception as e:
+            restart_result = {"ok": False, "error": str(e)}
+
+    return {
+        "ok": True,
+        "active_profile_id": profile["id"],
+        "profile": {k: ("configured" if k == "api_key" and v else v) for k, v in profile.items()},
+        "restart": restart_result,
+    }
 
 
 @app.post("/api/patch-model-menu")
@@ -3294,6 +3448,68 @@ async def api_restart_claude_science():
         }
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "Restart timed out after 90 seconds."}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def run_ccswitch_integration(args: list[str], timeout: int = 30) -> dict:
+    """Run the CC Switch integration helper and return parsed JSON output."""
+    script = PROXY_DIR / "scripts" / "integrate-ccswitch.py"
+    if not script.exists():
+        return {"ok": False, "error": f"CC Switch integration script not found: {script}"}
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script), *args, "--json"],
+            cwd=str(PROXY_DIR),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": f"CC Switch integration timed out after {timeout} seconds."}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+    text = (result.stdout or "").strip()
+    try:
+        payload = json.loads(text) if text else {}
+    except Exception:
+        payload = {"ok": False, "error": text[-1200:] or "Integration returned non-JSON output."}
+    if result.returncode != 0 and payload.get("ok", False):
+        payload["ok"] = False
+    if result.returncode != 0 and not payload.get("error"):
+        payload["error"] = (result.stderr or text or f"Exited with code {result.returncode}")[-1200:]
+    return payload
+
+
+@app.get("/api/ccswitch-status")
+async def api_ccswitch_status():
+    return run_ccswitch_integration(["--status"], timeout=15)
+
+
+@app.post("/api/ccswitch-sync")
+async def api_ccswitch_sync(request: Request):
+    body, _ = await read_json_object(request)
+    args = []
+    if isinstance(body, dict) and body.get("activate"):
+        args.append("--activate")
+    return run_ccswitch_integration(args, timeout=30)
+
+
+@app.post("/api/open-ccswitch")
+async def api_open_ccswitch():
+    if sys.platform != "darwin":
+        return {"ok": False, "error": "Opening CC Switch from the dashboard is macOS-only."}
+    try:
+        result = subprocess.run(
+            ["open", "-a", "CC Switch"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            return {"ok": True}
+        return {"ok": False, "error": (result.stderr or result.stdout or "open failed").strip()[-400:]}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

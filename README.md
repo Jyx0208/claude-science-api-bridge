@@ -127,7 +127,7 @@ http://127.0.0.1:9876/dashboard
 
 - `Providers`：添加、编辑、复制、搜索和一键切换 provider
 - `模型菜单`：拉取上游模型列表，选择要显示在 Claude Science 里的第三方模型
-- `高级设置`：配置图片策略、reasoning 策略、本地 path-secret、LaunchAgent 和更新
+- `高级设置`：配置图片策略、reasoning 策略、本地 path-secret、LaunchAgent、CC Switch 集成和更新
 - `诊断日志`：查看最近请求、真实后端模型、成功/失败状态
 
 推荐配置流程：
@@ -139,6 +139,28 @@ http://127.0.0.1:9876/dashboard
 5. 点击“应用到菜单”或“应用并补丁菜单”
 6. 点击“一键测试”
 7. 重新打开 Claude Science
+
+## CC Switch 集成
+
+本项目针对的是 **Claude Science**，不是 Claude Desktop。
+
+Dashboard 的“CC Switch · Claude Science”面板会把当前 Bridge 配置同步为 `app_type=claude-science`。这不会影响 CC Switch 里的 Claude Code 或 Claude Desktop 配置。
+
+Agent 也可以直接执行：
+
+```bash
+cd ~/.claude-science/proxy
+python3 scripts/integrate-ccswitch.py --activate
+```
+
+当前官方 CC Switch 3.16.x 还没有 Claude Science 原生面板，源码中 app 类型是硬编码的；本仓库已经提供源码补丁 [patches/cc-switch-claude-science.patch](patches/cc-switch-claude-science.patch) 和套补丁脚本：
+
+```bash
+cd ~/.claude-science/proxy
+./scripts/patch-ccswitch-source.sh
+```
+
+补丁版 CC Switch 会沿用原有 AppSwitcher、Provider 列表、Provider 表单和 toast 风格，新增独立 `Claude Science` 面板。切换 Provider 时只更新 `app_type=claude-science`，并调用 Bridge 的 `/api/ccswitch/apply-provider`；不会写 Claude Desktop profile，也不会写 Claude Code live config。详细说明见 [docs/ccswitch-claude-science.md](docs/ccswitch-claude-science.md)。
 
 ## 常见 provider 配置
 
@@ -360,6 +382,7 @@ https://github.com/Jyx0208/claude-science-api-bridge
 10. 如果模型支持读图，运行 VERIFY_IMAGE=1 ./scripts/verify-proxy.sh 做真实图片输入验证。
 11. 如果是 macOS，运行 ./scripts/start-claude-science.sh，让脚本自动刷新 token、补丁本地 daemon 复制件并重启 Claude Science。
 12. 再检查 http://127.0.0.1:9876/api/recent-requests，确认请求命中了本地代理。
+13. 如果我要集成 CC Switch，请运行 python3 scripts/integrate-ccswitch.py --activate 同步并选中当前 Bridge provider profile；如果需要独立 Claude Science 面板，请运行 ./scripts/patch-ccswitch-source.sh 套用 CC Switch 源码补丁并构建补丁版 CC Switch。不要把 Claude Science 写进 Claude Desktop 或 Claude Code 面板。
 
 如果遇到问题：
 1. 先运行 ./scripts/doctor.sh。

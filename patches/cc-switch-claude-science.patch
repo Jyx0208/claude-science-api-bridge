@@ -1,0 +1,1447 @@
+diff --git a/src-tauri/src/app_config.rs b/src-tauri/src/app_config.rs
+index 2af5333..2a462a2 100644
+--- a/src-tauri/src/app_config.rs
++++ b/src-tauri/src/app_config.rs
+@@ -30,6 +30,7 @@ impl McpApps {
+             AppType::OpenClaw => false, // OpenClaw doesn't support MCP
+             AppType::Hermes => self.hermes,
+             AppType::ClaudeDesktop => false,
++            AppType::ClaudeScience => false,
+         }
+     }
+ 
+@@ -43,6 +44,7 @@ impl McpApps {
+             AppType::OpenClaw => {} // OpenClaw doesn't support MCP, ignore
+             AppType::Hermes => self.hermes = enabled,
+             AppType::ClaudeDesktop => {} // Claude Desktop 3P provider config doesn't support MCP here
++            AppType::ClaudeScience => {} // Claude Science is managed by Claude Science API Bridge
+         }
+     }
+ 
+@@ -99,6 +101,7 @@ impl SkillApps {
+             AppType::Hermes => self.hermes,
+             AppType::OpenClaw => false, // OpenClaw doesn't support Skills
+             AppType::ClaudeDesktop => false,
++            AppType::ClaudeScience => false,
+         }
+     }
+ 
+@@ -112,6 +115,7 @@ impl SkillApps {
+             AppType::Hermes => self.hermes = enabled,
+             AppType::OpenClaw => {} // OpenClaw doesn't support Skills, ignore
+             AppType::ClaudeDesktop => {} // Claude Desktop 3P profiles don't use CC Switch skill sync
++            AppType::ClaudeScience => {} // Claude Science is managed by Claude Science API Bridge
+         }
+     }
+ 
+@@ -346,6 +350,12 @@ pub enum AppType {
+         alias = "claudeDesktop"
+     )]
+     ClaudeDesktop,
++    #[serde(
++        rename = "claude-science",
++        alias = "claude_science",
++        alias = "claudeScience"
++    )]
++    ClaudeScience,
+     Codex,
+     Gemini,
+     OpenCode,
+@@ -358,6 +368,7 @@ impl AppType {
+         match self {
+             AppType::Claude => "claude",
+             AppType::ClaudeDesktop => "claude-desktop",
++            AppType::ClaudeScience => "claude-science",
+             AppType::Codex => "codex",
+             AppType::Gemini => "gemini",
+             AppType::OpenCode => "opencode",
+@@ -382,6 +393,7 @@ impl AppType {
+         [
+             AppType::Claude,
+             AppType::ClaudeDesktop,
++            AppType::ClaudeScience,
+             AppType::Codex,
+             AppType::Gemini,
+             AppType::OpenCode,
+@@ -400,6 +412,7 @@ impl FromStr for AppType {
+         match normalized.as_str() {
+             "claude" => Ok(AppType::Claude),
+             "claude-desktop" | "claude_desktop" | "claudedesktop" => Ok(AppType::ClaudeDesktop),
++            "claude-science" | "claude_science" | "claudescience" => Ok(AppType::ClaudeScience),
+             "codex" => Ok(AppType::Codex),
+             "gemini" => Ok(AppType::Gemini),
+             "opencode" => Ok(AppType::OpenCode),
+@@ -407,8 +420,8 @@ impl FromStr for AppType {
+             "hermes" => Ok(AppType::Hermes),
+             other => Err(AppError::localized(
+                 "unsupported_app",
+-                format!("不支持的应用标识: '{other}'。可选值: claude, claude-desktop, codex, gemini, opencode, openclaw, hermes。"),
+-                format!("Unsupported app id: '{other}'. Allowed: claude, claude-desktop, codex, gemini, opencode, openclaw, hermes."),
++                format!("不支持的应用标识: '{other}'。可选值: claude, claude-desktop, claude-science, codex, gemini, opencode, openclaw, hermes。"),
++                format!("Unsupported app id: '{other}'. Allowed: claude, claude-desktop, claude-science, codex, gemini, opencode, openclaw, hermes."),
+             )),
+         }
+     }
+@@ -442,6 +455,7 @@ impl CommonConfigSnippets {
+         match app {
+             AppType::Claude => self.claude.as_ref(),
+             AppType::ClaudeDesktop => None,
++            AppType::ClaudeScience => None,
+             AppType::Codex => self.codex.as_ref(),
+             AppType::Gemini => self.gemini.as_ref(),
+             AppType::OpenCode => self.opencode.as_ref(),
+@@ -455,6 +469,7 @@ impl CommonConfigSnippets {
+         match app {
+             AppType::Claude => self.claude = snippet,
+             AppType::ClaudeDesktop => {}
++            AppType::ClaudeScience => {}
+             AppType::Codex => self.codex = snippet,
+             AppType::Gemini => self.gemini = snippet,
+             AppType::OpenCode => self.opencode = snippet,
+@@ -498,6 +513,7 @@ impl Default for MultiAppConfig {
+         let mut apps = HashMap::new();
+         apps.insert("claude".to_string(), ProviderManager::default());
+         apps.insert("claude-desktop".to_string(), ProviderManager::default());
++        apps.insert("claude-science".to_string(), ProviderManager::default());
+         apps.insert("codex".to_string(), ProviderManager::default());
+         apps.insert("gemini".to_string(), ProviderManager::default());
+         apps.insert("opencode".to_string(), ProviderManager::default());
+@@ -660,6 +676,7 @@ impl MultiAppConfig {
+         match app {
+             AppType::Claude => &self.mcp.claude,
+             AppType::ClaudeDesktop => &self.mcp.claude_desktop,
++            AppType::ClaudeScience => &self.mcp.claude_desktop,
+             AppType::Codex => &self.mcp.codex,
+             AppType::Gemini => &self.mcp.gemini,
+             AppType::OpenCode => &self.mcp.opencode,
+@@ -673,6 +690,7 @@ impl MultiAppConfig {
+         match app {
+             AppType::Claude => &mut self.mcp.claude,
+             AppType::ClaudeDesktop => &mut self.mcp.claude_desktop,
++            AppType::ClaudeScience => &mut self.mcp.claude_desktop,
+             AppType::Codex => &mut self.mcp.codex,
+             AppType::Gemini => &mut self.mcp.gemini,
+             AppType::OpenCode => &mut self.mcp.opencode,
+@@ -799,6 +817,7 @@ impl MultiAppConfig {
+         let prompts = match app {
+             AppType::Claude => &mut config.prompts.claude.prompts,
+             AppType::ClaudeDesktop => &mut config.prompts.claude_desktop.prompts,
++            AppType::ClaudeScience => &mut config.prompts.claude_desktop.prompts,
+             AppType::Codex => &mut config.prompts.codex.prompts,
+             AppType::Gemini => &mut config.prompts.gemini.prompts,
+             AppType::OpenCode => &mut config.prompts.opencode.prompts,
+@@ -840,7 +859,7 @@ impl MultiAppConfig {
+         ] {
+             let old_servers = match app {
+                 AppType::Claude => &self.mcp.claude.servers,
+-                AppType::ClaudeDesktop => continue, // Claude Desktop 3P profiles don't use MCP here
++                AppType::ClaudeDesktop | AppType::ClaudeScience => continue, // Desktop/Science profiles don't use MCP here
+                 AppType::Codex => &self.mcp.codex.servers,
+                 AppType::Gemini => &self.mcp.gemini.servers,
+                 AppType::OpenCode => &self.mcp.opencode.servers,
+diff --git a/src-tauri/src/commands/config.rs b/src-tauri/src/commands/config.rs
+index dea8bef..fc17145 100644
+--- a/src-tauri/src/commands/config.rs
++++ b/src-tauri/src/commands/config.rs
+@@ -80,6 +80,13 @@ pub async fn get_config_status(
+                 path: status.config_library_path.unwrap_or_default(),
+             })
+         }
++        AppType::ClaudeScience => {
++            let dir = config::get_home_dir().join(".claude-science").join("proxy");
++            Ok(ConfigStatus {
++                exists: dir.exists(),
++                path: dir.to_string_lossy().to_string(),
++            })
++        }
+         AppType::Codex => {
+             let auth_path = codex_config::get_codex_auth_path();
+             let config_text = codex_config::read_codex_config_text().unwrap_or_default();
+@@ -141,6 +148,7 @@ pub async fn get_config_dir(app: String) -> Result<String, String> {
+         AppType::ClaudeDesktop => {
+             crate::claude_desktop_config::get_config_library_path().map_err(|e| e.to_string())?
+         }
++        AppType::ClaudeScience => config::get_home_dir().join(".claude-science").join("proxy"),
+         AppType::Codex => codex_config::get_codex_config_dir(),
+         AppType::Gemini => crate::gemini_config::get_gemini_dir(),
+         AppType::OpenCode => crate::opencode_config::get_opencode_dir(),
+@@ -158,6 +166,7 @@ pub async fn open_config_folder(handle: AppHandle, app: String) -> Result<bool,
+         AppType::ClaudeDesktop => {
+             crate::claude_desktop_config::get_config_library_path().map_err(|e| e.to_string())?
+         }
++        AppType::ClaudeScience => config::get_home_dir().join(".claude-science").join("proxy"),
+         AppType::Codex => codex_config::get_codex_config_dir(),
+         AppType::Gemini => crate::gemini_config::get_gemini_dir(),
+         AppType::OpenCode => crate::opencode_config::get_opencode_dir(),
+diff --git a/src-tauri/src/commands/misc.rs b/src-tauri/src/commands/misc.rs
+index 77fa0c9..d698b1b 100644
+--- a/src-tauri/src/commands/misc.rs
++++ b/src-tauri/src/commands/misc.rs
+@@ -2633,7 +2633,9 @@ fn extract_env_vars_from_config(
+ 
+         // 处理 base_url: 根据应用类型添加对应的环境变量
+         let base_url_key = match app_type {
+-            AppType::Claude | AppType::ClaudeDesktop => Some("ANTHROPIC_BASE_URL"),
++            AppType::Claude | AppType::ClaudeDesktop | AppType::ClaudeScience => {
++                Some("ANTHROPIC_BASE_URL")
++            }
+             AppType::Gemini => Some("GOOGLE_GEMINI_BASE_URL"),
+             _ => None,
+         };
+diff --git a/src-tauri/src/database/dao/proxy.rs b/src-tauri/src/database/dao/proxy.rs
+index c3c31cf..d822bdf 100644
+--- a/src-tauri/src/database/dao/proxy.rs
++++ b/src-tauri/src/database/dao/proxy.rs
+@@ -325,7 +325,7 @@ impl Database {
+         // 根据 app_type 使用不同的默认值（与 schema.rs seed 保持一致）
+         let (retries, fb_timeout, idle_timeout, cb_fail, cb_succ, cb_timeout, cb_rate, cb_min) =
+             match app_type {
+-                "claude" => (6, 90, 180, 8, 3, 90, 0.7, 15),
++                "claude" | "claude-science" => (6, 90, 180, 8, 3, 90, 0.7, 15),
+                 "codex" => (3, 60, 120, 4, 2, 60, 0.6, 10),
+                 "gemini" => (5, 60, 120, 4, 2, 60, 0.6, 10),
+                 _ => (3, 60, 120, 4, 2, 60, 0.6, 10), // 默认值
+diff --git a/src-tauri/src/deeplink/parser.rs b/src-tauri/src/deeplink/parser.rs
+index aca40fe..d79094f 100644
+--- a/src-tauri/src/deeplink/parser.rs
++++ b/src-tauri/src/deeplink/parser.rs
+@@ -81,10 +81,16 @@ fn parse_provider_deeplink(
+     // Validate app type
+     if !matches!(
+         app.as_str(),
+-        "claude" | "codex" | "gemini" | "opencode" | "openclaw" | "hermes"
++        "claude"
++            | "claude-science"
++            | "codex"
++            | "gemini"
++            | "opencode"
++            | "openclaw"
++            | "hermes"
+     ) {
+         return Err(AppError::InvalidInput(format!(
+-            "Invalid app type: must be 'claude', 'codex', 'gemini', 'opencode', 'openclaw', or 'hermes', got '{app}'"
++            "Invalid app type: must be 'claude', 'claude-science', 'codex', 'gemini', 'opencode', 'openclaw', or 'hermes', got '{app}'"
+         )));
+     }
+ 
+diff --git a/src-tauri/src/deeplink/provider.rs b/src-tauri/src/deeplink/provider.rs
+index d41e465..8da01f9 100644
+--- a/src-tauri/src/deeplink/provider.rs
++++ b/src-tauri/src/deeplink/provider.rs
+@@ -142,7 +142,9 @@ pub(crate) fn build_provider_from_request(
+     request: &DeepLinkImportRequest,
+ ) -> Result<Provider, AppError> {
+     let settings_config = match app_type {
+-        AppType::Claude | AppType::ClaudeDesktop => build_claude_settings(request),
++        AppType::Claude | AppType::ClaudeDesktop | AppType::ClaudeScience => {
++            build_claude_settings(request)
++        }
+         AppType::Codex => build_codex_settings(request),
+         AppType::Gemini => build_gemini_settings(request),
+         AppType::OpenCode => build_opencode_settings(request),
+diff --git a/src-tauri/src/prompt_files.rs b/src-tauri/src/prompt_files.rs
+index 70f350d..8aff837 100644
+--- a/src-tauri/src/prompt_files.rs
++++ b/src-tauri/src/prompt_files.rs
+@@ -10,11 +10,11 @@ use crate::opencode_config::get_opencode_dir;
+ 
+ /// 返回指定应用所使用的提示词文件路径。
+ pub fn prompt_file_path(app: &AppType) -> Result<PathBuf, AppError> {
+-    if matches!(app, AppType::ClaudeDesktop) {
++    if matches!(app, AppType::ClaudeDesktop | AppType::ClaudeScience) {
+         return Err(AppError::localized(
+-            "claude_desktop.prompts_unsupported",
+-            "Claude Desktop 暂不支持 Prompts",
+-            "Claude Desktop does not support Prompts",
++            "claude_like.prompts_unsupported",
++            "该应用暂不支持 Prompts",
++            "This app does not support Prompts",
+         ));
+     }
+ 
+@@ -25,7 +25,7 @@ pub fn prompt_file_path(app: &AppType) -> Result<PathBuf, AppError> {
+         AppType::OpenCode => get_opencode_dir(),
+         AppType::OpenClaw => get_openclaw_dir(),
+         AppType::Hermes => crate::hermes_config::get_hermes_dir(),
+-        AppType::ClaudeDesktop => unreachable!("handled above"),
++        AppType::ClaudeDesktop | AppType::ClaudeScience => unreachable!("handled above"),
+     };
+ 
+     let filename = match app {
+@@ -33,7 +33,7 @@ pub fn prompt_file_path(app: &AppType) -> Result<PathBuf, AppError> {
+         AppType::Codex => "AGENTS.md",
+         AppType::Gemini => "GEMINI.md",
+         AppType::OpenCode | AppType::OpenClaw | AppType::Hermes => "AGENTS.md",
+-        AppType::ClaudeDesktop => unreachable!("handled above"),
++        AppType::ClaudeDesktop | AppType::ClaudeScience => unreachable!("handled above"),
+     };
+ 
+     Ok(base_dir.join(filename))
+diff --git a/src-tauri/src/provider.rs b/src-tauri/src/provider.rs
+index 9eb2195..8a86c6f 100644
+--- a/src-tauri/src/provider.rs
++++ b/src-tauri/src/provider.rs
+@@ -182,10 +182,10 @@ impl Provider {
+                     str_at(options.and_then(|o| o.get("apiKey"))),
+                 )
+             }
+-            // Claude and Claude Desktop both use the Anthropic-style env map, keeping
++            // Claude, Claude Desktop and Claude Science all use the Anthropic-style env map, keeping
+             // the OpenRouter/Google key fallbacks the JS-script path relies on.
+             // Listed explicitly (not `_`) so a new AppType fails to compile here.
+-            AppType::Claude | AppType::ClaudeDesktop => {
++            AppType::Claude | AppType::ClaudeDesktop | AppType::ClaudeScience => {
+                 let env = settings.get("env");
+                 let base_url = str_at(env.and_then(|e| e.get("ANTHROPIC_BASE_URL")));
+                 let api_key = first_non_empty(
+diff --git a/src-tauri/src/proxy/providers/mod.rs b/src-tauri/src/proxy/providers/mod.rs
+index 7f3d8e1..6e2d88b 100644
+--- a/src-tauri/src/proxy/providers/mod.rs
++++ b/src-tauri/src/proxy/providers/mod.rs
+@@ -114,7 +114,7 @@ impl ProviderType {
+     #[allow(dead_code)]
+     pub fn from_app_type_and_config(app_type: &AppType, provider: &Provider) -> Self {
+         match app_type {
+-            AppType::Claude | AppType::ClaudeDesktop => {
++            AppType::Claude | AppType::ClaudeDesktop | AppType::ClaudeScience => {
+                 if get_claude_api_format(provider) == "gemini_native" {
+                     let adapter = ClaudeAdapter::new();
+                     return match adapter.extract_auth(provider).map(|auth| auth.strategy) {
+@@ -235,7 +235,9 @@ impl std::str::FromStr for ProviderType {
+ /// 根据 AppType 获取对应的适配器
+ pub fn get_adapter(app_type: &AppType) -> Box<dyn ProviderAdapter> {
+     match app_type {
+-        AppType::Claude | AppType::ClaudeDesktop => Box::new(ClaudeAdapter::new()),
++        AppType::Claude | AppType::ClaudeDesktop | AppType::ClaudeScience => {
++            Box::new(ClaudeAdapter::new())
++        }
+         AppType::Codex => Box::new(CodexAdapter::new()),
+         AppType::Gemini => Box::new(GeminiAdapter::new()),
+         AppType::OpenCode | AppType::OpenClaw | AppType::Hermes => {
+diff --git a/src-tauri/src/services/config.rs b/src-tauri/src/services/config.rs
+index 93565d2..9d56846 100644
+--- a/src-tauri/src/services/config.rs
++++ b/src-tauri/src/services/config.rs
+@@ -124,6 +124,9 @@ impl ConfigService {
+             AppType::ClaudeDesktop => {
+                 // Claude Desktop 3P profiles are managed by claude_desktop_config.
+             }
++            AppType::ClaudeScience => {
++                // Claude Science profiles are managed by Claude Science API Bridge.
++            }
+             AppType::Gemini => Self::sync_gemini_live(config, &current_id, &provider)?,
+             AppType::OpenCode => {
+                 // OpenCode uses additive mode, no live sync needed
+diff --git a/src-tauri/src/services/mcp.rs b/src-tauri/src/services/mcp.rs
+index ed07c56..6a9d0d3 100644
+--- a/src-tauri/src/services/mcp.rs
++++ b/src-tauri/src/services/mcp.rs
+@@ -115,6 +115,9 @@ impl McpService {
+             AppType::ClaudeDesktop => {
+                 log::debug!("Claude Desktop 3P profiles do not use CC Switch MCP sync, skipping");
+             }
++            AppType::ClaudeScience => {
++                log::debug!("Claude Science is managed by Claude Science API Bridge, skipping MCP sync");
++            }
+             AppType::Codex => {
+                 // Codex uses TOML format, must use the correct function
+                 mcp::sync_single_server_to_codex(&Default::default(), &server.id, &server.server)?;
+@@ -160,6 +163,9 @@ impl McpService {
+             AppType::ClaudeDesktop => {
+                 log::debug!("Claude Desktop 3P profiles do not use CC Switch MCP sync, skipping");
+             }
++            AppType::ClaudeScience => {
++                log::debug!("Claude Science is managed by Claude Science API Bridge, skipping MCP remove");
++            }
+             AppType::Codex => mcp::remove_server_from_codex(id)?,
+             AppType::Gemini => mcp::remove_server_from_gemini(id)?,
+             AppType::OpenCode => {
+@@ -181,7 +187,10 @@ impl McpService {
+         let servers = Self::get_all_servers(state)?;
+ 
+         for app in AppType::all() {
+-            if matches!(app, AppType::OpenClaw | AppType::ClaudeDesktop) {
++            if matches!(
++                app,
++                AppType::OpenClaw | AppType::ClaudeDesktop | AppType::ClaudeScience
++            ) {
+                 continue;
+             }
+ 
+diff --git a/src-tauri/src/services/provider/live.rs b/src-tauri/src/services/provider/live.rs
+index b4af9fc..b129639 100644
+--- a/src-tauri/src/services/provider/live.rs
++++ b/src-tauri/src/services/provider/live.rs
+@@ -347,7 +347,11 @@ fn settings_contain_common_config(app_type: &AppType, settings: &Value, snippet:
+             }
+             _ => false,
+         },
+-        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::ClaudeDesktop => false,
++        AppType::OpenCode
++        | AppType::OpenClaw
++        | AppType::Hermes
++        | AppType::ClaudeDesktop
++        | AppType::ClaudeScience => false,
+     }
+ }
+ 
+@@ -417,7 +421,11 @@ pub(crate) fn remove_common_config_from_settings(
+             }
+             Ok(result)
+         }
+-        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::ClaudeDesktop => {
++        AppType::OpenCode
++        | AppType::OpenClaw
++        | AppType::Hermes
++        | AppType::ClaudeDesktop
++        | AppType::ClaudeScience => {
+             Ok(settings.clone())
+         }
+     }
+@@ -474,7 +482,11 @@ fn apply_common_config_to_settings(
+             }
+             Ok(result)
+         }
+-        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::ClaudeDesktop => {
++        AppType::OpenCode
++        | AppType::OpenClaw
++        | AppType::Hermes
++        | AppType::ClaudeDesktop
++        | AppType::ClaudeScience => {
+             Ok(settings.clone())
+         }
+     }
+@@ -515,6 +527,14 @@ pub(crate) fn write_live_with_common_config(
+     effective_provider.settings_config =
+         build_effective_settings_with_common_config(db, app_type, provider)?;
+ 
++    if matches!(app_type, AppType::ClaudeScience) {
++        log::info!(
++            "Claude Science provider '{}' is managed by Claude Science API Bridge; skipping live file write",
++            effective_provider.id
++        );
++        return Ok(());
++    }
++
+     if matches!(app_type, AppType::ClaudeDesktop) {
+         crate::claude_desktop_config::apply_provider(db, &effective_provider)?;
+         log::info!(
+@@ -750,6 +770,12 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
+                 "Claude Desktop configuration must be written through the provider switch flow",
+             ));
+         }
++        AppType::ClaudeScience => {
++            log::info!(
++                "Claude Science provider '{}' is managed by Claude Science API Bridge; skipping live snapshot",
++                provider.id
++            );
++        }
+         AppType::Codex => {
+             let obj = provider
+                 .settings_config
+@@ -924,6 +950,10 @@ pub(crate) fn sync_current_provider_for_app_to_live(
+     state: &AppState,
+     app_type: &AppType,
+ ) -> Result<(), AppError> {
++    if matches!(app_type, AppType::ClaudeScience) {
++        return Ok(());
++    }
++
+     if app_type.is_additive_mode() {
+         sync_all_providers_to_live(state, app_type)?;
+     } else {
+@@ -948,6 +978,10 @@ fn sync_current_provider_for_app_respecting_takeover(
+     state: &AppState,
+     app_type: &AppType,
+ ) -> Result<(), AppError> {
++    if matches!(app_type, AppType::ClaudeScience) {
++        return Ok(());
++    }
++
+     let current_id = match crate::settings::get_effective_current_provider(&state.db, app_type)? {
+         Some(id) => id,
+         None => return Ok(()),
+@@ -1056,6 +1090,11 @@ pub fn read_live_settings(app_type: AppType) -> Result<Value, AppError> {
+             "Claude Desktop 3P 配置不支持作为通用 live 配置导入，请使用“从 Claude 导入兼容供应商”。",
+             "Claude Desktop 3P configuration cannot be imported as a generic live config. Use 'Import compatible providers from Claude' instead.",
+         )),
++        AppType::ClaudeScience => Err(AppError::localized(
++            "claude_science.live.read_unsupported",
++            "Claude Science 配置由 Claude Science API Bridge 管理，不支持作为通用 live 配置读取。",
++            "Claude Science configuration is managed by Claude Science API Bridge and cannot be read as a generic live config.",
++        )),
+         AppType::Gemini => {
+             use crate::gemini_config::{
+                 env_to_json, get_gemini_env_path, get_gemini_settings_path, read_gemini_env,
+@@ -1192,6 +1231,13 @@ pub fn import_default_config(state: &AppState, app_type: AppType) -> Result<bool
+                 "Claude Desktop 3P config cannot be imported through the generic import flow. Use 'Import compatible providers from Claude' instead.",
+             ));
+         }
++        AppType::ClaudeScience => {
++            return Err(AppError::localized(
++                "claude_science.import_unsupported",
++                "Claude Science 由 Claude Science API Bridge 管理，请在 Bridge 控制台同步 Provider。",
++                "Claude Science is managed by Claude Science API Bridge. Sync providers from the Bridge dashboard.",
++            ));
++        }
+         AppType::Gemini => {
+             use crate::gemini_config::{
+                 env_to_json, get_gemini_env_path, get_gemini_settings_path, read_gemini_env,
+diff --git a/src-tauri/src/services/provider/mod.rs b/src-tauri/src/services/provider/mod.rs
+index a884aae..b08528f 100644
+--- a/src-tauri/src/services/provider/mod.rs
++++ b/src-tauri/src/services/provider/mod.rs
+@@ -1893,6 +1893,9 @@ impl ProviderService {
+             let live_taken_over = state
+                 .proxy_service
+                 .detect_takeover_in_live_config_for_app(&app_type);
++            if matches!(app_type, AppType::ClaudeScience) {
++                return Ok(true);
++            }
+             // Backup or live placeholders mean the live file is currently owned
+             // by proxy takeover, including the short activation window before
+             // proxy_config.enabled is committed.
+@@ -2092,6 +2095,10 @@ impl ProviderService {
+             return Self::switch_normal(state, app_type, id, &providers);
+         }
+ 
++        if matches!(app_type, AppType::ClaudeScience) {
++            return Self::switch_db_only(state, app_type, id);
++        }
++
+         // Provider switches and takeover toggles both mutate live config and the
+         // restore backup. Serialize them per app, then decide from the locked
+         // current state so a just-started takeover cannot be overwritten by a
+@@ -2155,6 +2162,17 @@ impl ProviderService {
+         Self::switch_normal(state, app_type, id, &providers)
+     }
+ 
++    /// Claude Science is applied through Claude Science API Bridge, not a CC Switch live config file.
++    fn switch_db_only(
++        state: &AppState,
++        app_type: AppType,
++        id: &str,
++    ) -> Result<SwitchResult, AppError> {
++        crate::settings::set_current_provider(&app_type, Some(id))?;
++        state.db.set_current_provider(app_type.as_str(), id)?;
++        Ok(SwitchResult::default())
++    }
++
+     /// Normal switch flow (non-proxy mode)
+     fn switch_normal(
+         state: &AppState,
+@@ -2546,6 +2564,7 @@ impl ProviderService {
+         match app_type {
+             AppType::Claude => Self::extract_claude_common_config(&provider.settings_config),
+             AppType::ClaudeDesktop => Ok(String::new()),
++            AppType::ClaudeScience => Ok(String::new()),
+             AppType::Codex => Self::extract_codex_common_config(&provider.settings_config),
+             AppType::Gemini => Self::extract_gemini_common_config(&provider.settings_config),
+             AppType::OpenCode => Self::extract_opencode_common_config(&provider.settings_config),
+@@ -2562,6 +2581,7 @@ impl ProviderService {
+         match app_type {
+             AppType::Claude => Self::extract_claude_common_config(settings_config),
+             AppType::ClaudeDesktop => Ok(String::new()),
++            AppType::ClaudeScience => Ok(String::new()),
+             AppType::Codex => Self::extract_codex_common_config(settings_config),
+             AppType::Gemini => Self::extract_gemini_common_config(settings_config),
+             AppType::OpenCode => Self::extract_opencode_common_config(settings_config),
+@@ -2930,7 +2950,7 @@ impl ProviderService {
+ 
+     fn validate_provider_settings(app_type: &AppType, provider: &Provider) -> Result<(), AppError> {
+         match app_type {
+-            AppType::Claude => {
++            AppType::Claude | AppType::ClaudeScience => {
+                 if !provider.settings_config.is_object() {
+                     return Err(AppError::localized(
+                         "provider.claude.settings.not_object",
+@@ -3042,7 +3062,7 @@ impl ProviderService {
+         app_type: &AppType,
+     ) -> Result<(String, String), AppError> {
+         match app_type {
+-            AppType::Claude => {
++            AppType::Claude | AppType::ClaudeScience => {
+                 let env = provider
+                     .settings_config
+                     .get("env")
+diff --git a/src-tauri/src/services/skill.rs b/src-tauri/src/services/skill.rs
+index 0e90e7b..2148883 100644
+--- a/src-tauri/src/services/skill.rs
++++ b/src-tauri/src/services/skill.rs
+@@ -510,7 +510,7 @@ impl SkillService {
+                     return Ok(custom.join("skills"));
+                 }
+             }
+-            AppType::ClaudeDesktop => {}
++            AppType::ClaudeDesktop | AppType::ClaudeScience => {}
+             AppType::Codex => {
+                 if let Some(custom) = crate::settings::get_codex_override_dir() {
+                     return Ok(custom.join("skills"));
+@@ -548,6 +548,7 @@ impl SkillService {
+         Ok(match app {
+             AppType::Claude => home.join(".claude").join("skills"),
+             AppType::ClaudeDesktop => home.join(".claude-desktop").join("skills"),
++            AppType::ClaudeScience => home.join(".claude-science").join("skills"),
+             AppType::Codex => home.join(".codex").join("skills"),
+             AppType::Gemini => home.join(".gemini").join("skills"),
+             AppType::OpenCode => home.join(".config").join("opencode").join("skills"),
+@@ -1584,7 +1585,7 @@ impl SkillService {
+     /// - Symlink: 仅使用 symlink
+     /// - Copy: 仅使用文件复制
+     pub fn sync_to_app_dir(directory: &str, app: &AppType) -> Result<()> {
+-        if matches!(app, AppType::ClaudeDesktop) {
++        if matches!(app, AppType::ClaudeDesktop | AppType::ClaudeScience) {
+             return Ok(());
+         }
+ 
+@@ -1756,7 +1757,7 @@ impl SkillService {
+ 
+     /// 从应用目录删除 Skill（支持 symlink 和真实目录）
+     pub fn remove_from_app(directory: &str, app: &AppType) -> Result<()> {
+-        if matches!(app, AppType::ClaudeDesktop) {
++        if matches!(app, AppType::ClaudeDesktop | AppType::ClaudeScience) {
+             return Ok(());
+         }
+ 
+@@ -1773,7 +1774,7 @@ impl SkillService {
+ 
+     /// 同步所有已启用的 Skills 到指定应用
+     pub fn sync_to_app(db: &Arc<Database>, app: &AppType) -> Result<()> {
+-        if matches!(app, AppType::ClaudeDesktop) {
++        if matches!(app, AppType::ClaudeDesktop | AppType::ClaudeScience) {
+             return Ok(());
+         }
+ 
+diff --git a/src-tauri/src/services/stream_check.rs b/src-tauri/src/services/stream_check.rs
+index 76aa9d0..4ffc8dc 100644
+--- a/src-tauri/src/services/stream_check.rs
++++ b/src-tauri/src/services/stream_check.rs
+@@ -202,7 +202,7 @@ impl StreamCheckService {
+             }
+             AppType::OpenClaw => Self::extract_openclaw_base_url(provider),
+             AppType::Hermes => Self::extract_hermes_base_url(provider),
+-            AppType::ClaudeDesktop => ClaudeAdapter::new()
++            AppType::ClaudeDesktop | AppType::ClaudeScience => ClaudeAdapter::new()
+                 .extract_base_url(provider)
+                 .map_err(|e| AppError::Message(format!("Failed to extract base_url: {e}"))),
+             _ => get_adapter(app_type)
+diff --git a/src-tauri/src/settings.rs b/src-tauri/src/settings.rs
+index ffa0090..8f24151 100644
+--- a/src-tauri/src/settings.rs
++++ b/src-tauri/src/settings.rs
+@@ -35,6 +35,13 @@ pub struct VisibleApps {
+         default = "default_true"
+     )]
+     pub claude_desktop: bool,
++    #[serde(
++        rename = "claude-science",
++        alias = "claudeScience",
++        alias = "claude_science",
++        default = "default_true"
++    )]
++    pub claude_science: bool,
+     #[serde(default = "default_true")]
+     pub codex: bool,
+     #[serde(default = "default_true")]
+@@ -52,6 +59,7 @@ impl Default for VisibleApps {
+         Self {
+             claude: true,
+             claude_desktop: true,
++            claude_science: true,
+             codex: true,
+             gemini: true,
+             opencode: true,
+@@ -67,6 +75,7 @@ impl VisibleApps {
+         match app {
+             AppType::Claude => self.claude,
+             AppType::ClaudeDesktop => self.claude_desktop,
++            AppType::ClaudeScience => self.claude_science,
+             AppType::Codex => self.codex,
+             AppType::Gemini => self.gemini,
+             AppType::OpenCode => self.opencode,
+@@ -423,6 +432,9 @@ pub struct AppSettings {
+     /// 当前 Claude Desktop 供应商 ID（本地存储，优先于数据库 is_current）
+     #[serde(default, skip_serializing_if = "Option::is_none")]
+     pub current_provider_claude_desktop: Option<String>,
++    /// 当前 Claude Science 供应商 ID（本地存储，优先于数据库 is_current）
++    #[serde(default, skip_serializing_if = "Option::is_none")]
++    pub current_provider_claude_science: Option<String>,
+     /// 当前 Codex 供应商 ID（本地存储，优先于数据库 is_current）
+     #[serde(default, skip_serializing_if = "Option::is_none")]
+     pub current_provider_codex: Option<String>,
+@@ -519,6 +531,7 @@ impl Default for AppSettings {
+             hermes_config_dir: None,
+             current_provider_claude: None,
+             current_provider_claude_desktop: None,
++            current_provider_claude_science: None,
+             current_provider_codex: None,
+             current_provider_gemini: None,
+             current_provider_opencode: None,
+@@ -931,6 +944,7 @@ pub fn get_current_provider(app_type: &AppType) -> Option<String> {
+     match app_type {
+         AppType::Claude => settings.current_provider_claude.clone(),
+         AppType::ClaudeDesktop => settings.current_provider_claude_desktop.clone(),
++        AppType::ClaudeScience => settings.current_provider_claude_science.clone(),
+         AppType::Codex => settings.current_provider_codex.clone(),
+         AppType::Gemini => settings.current_provider_gemini.clone(),
+         AppType::OpenCode => settings.current_provider_opencode.clone(),
+@@ -948,6 +962,7 @@ pub fn set_current_provider(app_type: &AppType, id: Option<&str>) -> Result<(),
+     mutate_settings(|settings| match app_type {
+         AppType::Claude => settings.current_provider_claude = id_owned.clone(),
+         AppType::ClaudeDesktop => settings.current_provider_claude_desktop = id_owned.clone(),
++        AppType::ClaudeScience => settings.current_provider_claude_science = id_owned.clone(),
+         AppType::Codex => settings.current_provider_codex = id_owned.clone(),
+         AppType::Gemini => settings.current_provider_gemini = id_owned.clone(),
+         AppType::OpenCode => settings.current_provider_opencode = id_owned.clone(),
+diff --git a/src/App.tsx b/src/App.tsx
+index 0eaef98..7eaab6b 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -124,6 +124,7 @@ const STORAGE_KEY = "cc-switch-last-app";
+ const VALID_APPS: AppId[] = [
+   "claude",
+   "claude-desktop",
++  "claude-science",
+   "codex",
+   "gemini",
+   "opencode",
+@@ -191,6 +192,7 @@ function App() {
+   const visibleApps: VisibleApps = settingsData?.visibleApps ?? {
+     claude: true,
+     "claude-desktop": true,
++    "claude-science": true,
+     codex: true,
+     gemini: true,
+     opencode: true,
+@@ -201,6 +203,7 @@ function App() {
+   const getFirstVisibleApp = (): AppId => {
+     if (visibleApps.claude) return "claude";
+     if (visibleApps["claude-desktop"]) return "claude-desktop";
++    if (visibleApps["claude-science"]) return "claude-science";
+     if (visibleApps.codex) return "codex";
+     if (visibleApps.gemini) return "gemini";
+     if (visibleApps.opencode) return "opencode";
+@@ -1231,7 +1234,8 @@ function App() {
+             {currentView === "providers" &&
+               activeApp !== "opencode" &&
+               activeApp !== "openclaw" &&
+-              activeApp !== "hermes" && (
++              activeApp !== "hermes" &&
++              activeApp !== "claude-science" && (
+                 <div
+                   className="flex shrink-0 items-center gap-1.5"
+                   style={{ WebkitAppRegion: "no-drag" } as any}
+diff --git a/src/components/AppSwitcher.tsx b/src/components/AppSwitcher.tsx
+index 3ffdb09..fc1db2f 100644
+--- a/src/components/AppSwitcher.tsx
++++ b/src/components/AppSwitcher.tsx
+@@ -2,13 +2,14 @@ import type { AppId } from "@/lib/api";
+ import type { VisibleApps } from "@/types";
+ import { ProviderIcon } from "@/components/ProviderIcon";
+ import { cn } from "@/lib/utils";
+-import { Monitor, Terminal } from "lucide-react";
++import { FlaskConical, Monitor, Terminal } from "lucide-react";
+ 
+ const APP_BADGE_ICON: Partial<
+   Record<AppId, { icon: typeof Terminal; offsetY?: number }>
+ > = {
+   claude: { icon: Terminal },
+   "claude-desktop": { icon: Monitor, offsetY: 0.5 },
++  "claude-science": { icon: FlaskConical, offsetY: 0.5 },
+ };
+ 
+ interface AppSwitcherProps {
+@@ -21,6 +22,7 @@ interface AppSwitcherProps {
+ const ALL_APPS: AppId[] = [
+   "claude",
+   "claude-desktop",
++  "claude-science",
+   "codex",
+   "gemini",
+   "opencode",
+@@ -44,6 +46,7 @@ export function AppSwitcher({
+   const appIconName: Record<AppId, string> = {
+     claude: "claude",
+     "claude-desktop": "claude",
++    "claude-science": "claude",
+     codex: "openai",
+     gemini: "gemini",
+     opencode: "opencode",
+@@ -53,6 +56,7 @@ export function AppSwitcher({
+   const appDisplayName: Record<AppId, string> = {
+     claude: "Claude Code",
+     "claude-desktop": "Claude Desktop",
++    "claude-science": "Claude Science",
+     codex: "Codex",
+     gemini: "Gemini",
+     opencode: "OpenCode",
+diff --git a/src/components/UsageScriptModal.tsx b/src/components/UsageScriptModal.tsx
+index e05521c..c0ec355 100644
+--- a/src/components/UsageScriptModal.tsx
++++ b/src/components/UsageScriptModal.tsx
+@@ -156,11 +156,12 @@ function detectBalanceProvider(baseUrl: string | undefined): boolean {
+ }
+ 
+ function isOfficialSubscriptionProvider(provider: Provider, appId: AppId) {
+-  if (!["claude", "codex", "gemini"].includes(appId)) return false;
++  if (!["claude", "claude-science", "codex", "gemini"].includes(appId))
++    return false;
+   if (provider.category === "official") return true;
+ 
+   const config = provider.settingsConfig as Record<string, any>;
+-  if (appId === "claude") {
++  if (appId === "claude" || appId === "claude-science") {
+     const baseUrl = config?.env?.ANTHROPIC_BASE_URL;
+     return !baseUrl || (typeof baseUrl === "string" && baseUrl.trim() === "");
+   }
+@@ -226,7 +227,11 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
+         if (!config) return { apiKey: undefined, baseUrl: undefined };
+ 
+         // 处理不同应用的配置格式
+-        if (appId === "claude" || appId === "claude-desktop") {
++        if (
++          appId === "claude" ||
++          appId === "claude-desktop" ||
++          appId === "claude-science"
++        ) {
+           // Claude / Claude Desktop: { env: { ANTHROPIC_AUTH_TOKEN | ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL } }
+           // Key fallbacks mirror the backend resolver (Provider::resolve_usage_credentials).
+           const env = (config as any).env || {};
+diff --git a/src/components/prompts/PromptFormModal.tsx b/src/components/prompts/PromptFormModal.tsx
+index 391670c..4cbbcf2 100644
+--- a/src/components/prompts/PromptFormModal.tsx
++++ b/src/components/prompts/PromptFormModal.tsx
+@@ -33,6 +33,7 @@ const PromptFormModal: React.FC<PromptFormModalProps> = ({
+   const filenameMap: Record<Exclude<AppId, "openclaw">, string> = {
+     claude: "CLAUDE.md",
+     "claude-desktop": "CLAUDE.md",
++    "claude-science": "CLAUDE.md",
+     codex: "AGENTS.md",
+     gemini: "GEMINI.md",
+     opencode: "AGENTS.md",
+diff --git a/src/components/prompts/PromptFormPanel.tsx b/src/components/prompts/PromptFormPanel.tsx
+index 1486dff..3c27035 100644
+--- a/src/components/prompts/PromptFormPanel.tsx
++++ b/src/components/prompts/PromptFormPanel.tsx
+@@ -27,6 +27,7 @@ const PromptFormPanel: React.FC<PromptFormPanelProps> = ({
+   const filenameMap: Record<AppId, string> = {
+     claude: "CLAUDE.md",
+     "claude-desktop": "CLAUDE.md",
++    "claude-science": "CLAUDE.md",
+     codex: "AGENTS.md",
+     gemini: "GEMINI.md",
+     opencode: "AGENTS.md",
+diff --git a/src/components/providers/AddProviderDialog.tsx b/src/components/providers/AddProviderDialog.tsx
+index 179f71c..b3affb6 100644
+--- a/src/components/providers/AddProviderDialog.tsx
++++ b/src/components/providers/AddProviderDialog.tsx
+@@ -160,7 +160,7 @@ export function AddProviderDialog({
+         };
+ 
+         if (values.presetId) {
+-          if (appId === "claude") {
++          if (appId === "claude" || appId === "claude-science") {
+             const presets = providerPresets;
+             const presetIndex = parseInt(
+               values.presetId.replace("claude-", ""),
+@@ -222,7 +222,7 @@ export function AddProviderDialog({
+           }
+         }
+ 
+-        if (appId === "claude") {
++        if (appId === "claude" || appId === "claude-science") {
+           const env = parsedConfig.env as Record<string, any> | undefined;
+           if (env?.ANTHROPIC_BASE_URL) {
+             addUrl(env.ANTHROPIC_BASE_URL);
+diff --git a/src/components/providers/EditProviderDialog.tsx b/src/components/providers/EditProviderDialog.tsx
+index 688e2db..8bb3bfe 100644
+--- a/src/components/providers/EditProviderDialog.tsx
++++ b/src/components/providers/EditProviderDialog.tsx
+@@ -69,7 +69,7 @@ export function EditProviderDialog({
+       // OpenCode uses additive mode - each provider's config is stored independently in DB
+       // Reading live config would return the full opencode.json (with $schema, provider, mcp etc.)
+       // instead of just the provider fragment, causing incorrect nested structure on save
+-      if (appId === "opencode") {
++      if (appId === "opencode" || appId === "claude-science") {
+         if (!cancelled) {
+           setLiveSettings(null);
+           setHasLoadedLive(true);
+diff --git a/src/components/providers/ProviderCard.tsx b/src/components/providers/ProviderCard.tsx
+index 23bd7c3..160e45c 100644
+--- a/src/components/providers/ProviderCard.tsx
++++ b/src/components/providers/ProviderCard.tsx
+@@ -72,7 +72,7 @@ function isOfficialProvider(provider: Provider, appId: AppId): boolean {
+   }
+ 
+   const config = provider.settingsConfig as Record<string, any>;
+-  if (appId === "claude") {
++  if (appId === "claude" || appId === "claude-science") {
+     const baseUrl = config?.env?.ANTHROPIC_BASE_URL;
+     return !baseUrl || (typeof baseUrl === "string" && baseUrl.trim() === "");
+   }
+diff --git a/src/components/providers/ProviderList.tsx b/src/components/providers/ProviderList.tsx
+index 62edad7..5a8ec0e 100644
+--- a/src/components/providers/ProviderList.tsx
++++ b/src/components/providers/ProviderList.tsx
+@@ -363,7 +363,9 @@ export function ProviderList({
+       <ProviderEmptyState
+         appId={appId}
+         onCreate={onCreate}
+-        onImport={() => importMutation.mutate()}
++        onImport={
++          appId === "claude-science" ? undefined : () => importMutation.mutate()
++        }
+       />
+     );
+   }
+diff --git a/src/components/providers/forms/EndpointSpeedTest.tsx b/src/components/providers/forms/EndpointSpeedTest.tsx
+index 49c57c8..717b00f 100644
+--- a/src/components/providers/forms/EndpointSpeedTest.tsx
++++ b/src/components/providers/forms/EndpointSpeedTest.tsx
+@@ -13,6 +13,7 @@ const ENDPOINT_TIMEOUT_SECS: Record<AppId, number> = {
+   codex: 12,
+   claude: 8,
+   "claude-desktop": 8,
++  "claude-science": 8,
+   gemini: 8,
+   opencode: 8,
+   openclaw: 8,
+diff --git a/src/components/providers/forms/ProviderForm.tsx b/src/components/providers/forms/ProviderForm.tsx
+index e942072..b9e4e0a 100644
+--- a/src/components/providers/forms/ProviderForm.tsx
++++ b/src/components/providers/forms/ProviderForm.tsx
+@@ -281,6 +281,7 @@ function ProviderFormFull({
+     throw new Error("ProviderFormFull should not receive claude-desktop");
+   }
+ 
++  const isClaudeLike = appId === "claude" || appId === "claude-science";
+   const { t } = useTranslation();
+   const isEditMode = Boolean(initialData);
+   const queryClient = useQueryClient();
+@@ -324,7 +325,7 @@ function ProviderFormFull({
+   const [endpointAutoSelect, setEndpointAutoSelect] = useState<boolean>(
+     () => initialData?.meta?.endpointAutoSelect ?? true,
+   );
+-  const supportsFullUrl = appId === "claude" || appId === "codex";
++  const supportsFullUrl = isClaudeLike || appId === "codex";
+   const [localIsFullUrl, setLocalIsFullUrl] = useState<boolean>(() => {
+     if (!supportsFullUrl) return false;
+     return initialData?.meta?.isFullUrl ?? false;
+@@ -432,7 +433,7 @@ function ProviderFormFull({
+ 
+   const [localApiKeyField, setLocalApiKeyField] = useState<ClaudeApiKeyField>(
+     () => {
+-      if (appId !== "claude") return "ANTHROPIC_AUTH_TOKEN";
++      if (!isClaudeLike) return "ANTHROPIC_AUTH_TOKEN";
+       if (initialData?.meta?.apiKeyField) return initialData.meta.apiKeyField;
+       // Infer from existing config env
+       const env = (initialData?.settingsConfig as Record<string, unknown>)
+@@ -467,7 +468,7 @@ function ProviderFormFull({
+     selectedPresetId,
+     category,
+     appType: appId,
+-    apiKeyField: appId === "claude" ? localApiKeyField : undefined,
++    apiKeyField: isClaudeLike ? localApiKeyField : undefined,
+   });
+ 
+   const { baseUrl, handleClaudeBaseUrlChange } = useBaseUrlState({
+@@ -496,7 +497,7 @@ function ProviderFormFull({
+   });
+ 
+   const [localApiFormat, setLocalApiFormat] = useState<ClaudeApiFormat>(() => {
+-    if (appId !== "claude") return "anthropic";
++    if (!isClaudeLike) return "anthropic";
+     return initialData?.meta?.apiFormat ?? "anthropic";
+   });
+ 
+@@ -695,8 +696,8 @@ function ProviderFormFull({
+     handleTemplateValueChange,
+     validateTemplateValues,
+   } = useTemplateValues({
+-    selectedPresetId: appId === "claude" ? selectedPresetId : null,
+-    presetEntries: appId === "claude" ? presetEntries : [],
++    selectedPresetId: isClaudeLike ? selectedPresetId : null,
++    presetEntries: isClaudeLike ? presetEntries : [],
+     settingsConfig: form.getValues("settingsConfig"),
+     onConfigChange: handleSettingsConfigChange,
+   });
+@@ -712,11 +713,11 @@ function ProviderFormFull({
+   } = useCommonConfigSnippet({
+     settingsConfig: form.getValues("settingsConfig"),
+     onConfigChange: handleSettingsConfigChange,
+-    initialData: appId === "claude" ? initialData : undefined,
++    initialData: isClaudeLike ? initialData : undefined,
+     initialEnabled:
+-      appId === "claude" ? initialData?.meta?.commonConfigEnabled : undefined,
++      isClaudeLike ? initialData?.meta?.commonConfigEnabled : undefined,
+     selectedPresetId: selectedPresetId ?? undefined,
+-    enabled: appId === "claude",
++    enabled: isClaudeLike,
+   });
+ 
+   const {
+@@ -977,7 +978,7 @@ function ProviderFormFull({
+   const [isCommonConfigModalOpen, setIsCommonConfigModalOpen] = useState(false);
+ 
+   const shouldApplyLocalProxyRequestOverrides =
+-    (appId === "claude" || appId === "codex") && category !== "official";
++    (isClaudeLike || appId === "codex") && category !== "official";
+ 
+   const handleSubmit = async (values: ProviderFormData) => {
+     const overridesResult = shouldApplyLocalProxyRequestOverrides
+@@ -1000,7 +1001,7 @@ function ProviderFormFull({
+     const issues: string[] = [];
+ 
+     // 模板变量未填：A 类（空值）
+-    if (appId === "claude" && templateValueEntries.length > 0) {
++    if (isClaudeLike && templateValueEntries.length > 0) {
+       const validation = validateTemplateValues();
+       if (!validation.isValid && validation.missingField) {
+         issues.push(
+@@ -1181,7 +1182,7 @@ function ProviderFormFull({
+     // 非官方供应商端点 / API Key 空：A 类
+     // cloud_provider（如 Bedrock）通过模板变量处理认证，跳过通用校验
+     if (category !== "official" && category !== "cloud_provider") {
+-      if (appId === "claude") {
++      if (isClaudeLike) {
+         if (!isCodexOauthProvider && !baseUrl.trim()) {
+           issues.push(
+             t("providerForm.endpointRequired", {
+@@ -1439,7 +1440,7 @@ function ProviderFormFull({
+     const nextMeta: ProviderMeta = {
+       ...(baseMeta ?? {}),
+       commonConfigEnabled:
+-        appId === "claude"
++        isClaudeLike
+           ? useCommonConfig
+           : appId === "codex"
+             ? useCodexCommonConfigFlag
+@@ -1476,7 +1477,7 @@ function ProviderFormFull({
+           ? normalizeCodexChatReasoningForSave(codexChatReasoning)
+           : undefined,
+       customUserAgent:
+-        (appId === "claude" || appId === "codex") && category !== "official"
++        (isClaudeLike || appId === "codex") && category !== "official"
+           ? customUserAgent.trim() || undefined
+           : undefined,
+       localProxyRequestOverrides: shouldApplyLocalProxyRequestOverrides
+@@ -1491,13 +1492,13 @@ function ProviderFormFull({
+           ? pricingConfig.pricingModelSource
+           : undefined,
+       apiFormat:
+-        appId === "claude" && category !== "official"
++        isClaudeLike && category !== "official"
+           ? localApiFormat
+           : appId === "codex" && category !== "official"
+             ? localCodexApiFormat
+             : undefined,
+       apiKeyField:
+-        appId === "claude" &&
++        isClaudeLike &&
+         category !== "official" &&
+         localApiKeyField !== "ANTHROPIC_AUTH_TOKEN"
+           ? localApiKeyField
+@@ -2034,7 +2035,7 @@ function ProviderFormFull({
+             }
+           />
+ 
+-          {appId === "claude" && (
++          {isClaudeLike && (
+             <ClaudeFormFields
+               providerId={providerId}
+               shouldShowApiKey={
+diff --git a/src/components/providers/forms/hooks/useApiKeyLink.ts b/src/components/providers/forms/hooks/useApiKeyLink.ts
+index 806aecf..8da886d 100644
+--- a/src/components/providers/forms/hooks/useApiKeyLink.ts
++++ b/src/components/providers/forms/hooks/useApiKeyLink.ts
+@@ -83,6 +83,7 @@ export function useApiKeyLink({
+     shouldShowApiKeyLink:
+       appId === "claude" ||
+       appId === "claude-desktop" ||
++      appId === "claude-science" ||
+       appId === "codex" ||
+       appId === "gemini" ||
+       appId === "opencode" ||
+diff --git a/src/components/providers/forms/hooks/useBaseUrlState.ts b/src/components/providers/forms/hooks/useBaseUrlState.ts
+index 05d9d7c..47b9c4c 100644
+--- a/src/components/providers/forms/hooks/useBaseUrlState.ts
++++ b/src/components/providers/forms/hooks/useBaseUrlState.ts
+@@ -34,7 +34,12 @@ export function useBaseUrlState({
+ 
+   // 从配置同步到 state（Claude / Claude Desktop）
+   useEffect(() => {
+-    if (appType !== "claude" && appType !== "claude-desktop") return;
++    if (
++      appType !== "claude" &&
++      appType !== "claude-desktop" &&
++      appType !== "claude-science"
++    )
++      return;
+     // 只有 official 类别不显示 Base URL 输入框，其他类别都需要回填
+     if (category === "official") return;
+     if (isUpdatingRef.current) return;
+diff --git a/src/components/providers/forms/hooks/useProviderCategory.ts b/src/components/providers/forms/hooks/useProviderCategory.ts
+index 8d792c4..d87a60f 100644
+--- a/src/components/providers/forms/hooks/useProviderCategory.ts
++++ b/src/components/providers/forms/hooks/useProviderCategory.ts
+@@ -60,7 +60,10 @@ export function useProviderCategory({
+           preset.category || (preset.isOfficial ? "official" : undefined),
+         );
+       }
+-    } else if (type === "claude" && appId === "claude") {
++    } else if (
++      type === "claude" &&
++      (appId === "claude" || appId === "claude-science")
++    ) {
+       const preset = providerPresets[index];
+       if (preset) {
+         setCategory(
+diff --git a/src/components/settings/AppVisibilitySettings.tsx b/src/components/settings/AppVisibilitySettings.tsx
+index 1b94b1e..2968e8d 100644
+--- a/src/components/settings/AppVisibilitySettings.tsx
++++ b/src/components/settings/AppVisibilitySettings.tsx
+@@ -22,6 +22,11 @@ const APP_CONFIG: Array<{
+     icon: "claude",
+     nameKey: "apps.claudeDesktop",
+   },
++  {
++    id: "claude-science",
++    icon: "claude",
++    nameKey: "apps.claudeScience",
++  },
+   { id: "codex", icon: "openai", nameKey: "apps.codex" },
+   { id: "gemini", icon: "gemini", nameKey: "apps.gemini" },
+   { id: "opencode", icon: "opencode", nameKey: "apps.opencode" },
+@@ -38,6 +43,7 @@ export function AppVisibilitySettings({
+   const visibleApps: VisibleApps = settings.visibleApps ?? {
+     claude: true,
+     "claude-desktop": true,
++    "claude-science": true,
+     codex: true,
+     gemini: true,
+     opencode: true,
+diff --git a/src/components/settings/DirectorySettings.tsx b/src/components/settings/DirectorySettings.tsx
+index 5966a12..5167d06 100644
+--- a/src/components/settings/DirectorySettings.tsx
++++ b/src/components/settings/DirectorySettings.tsx
+@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
+ import type { AppId } from "@/lib/api";
+ import type { ResolvedDirectories } from "@/hooks/useSettings";
+ 
+-type DirectoryAppId = Exclude<AppId, "claude-desktop">;
++type DirectoryAppId = Exclude<AppId, "claude-desktop" | "claude-science">;
+ 
+ interface DirectorySettingsProps {
+   appConfigDir?: string;
+diff --git a/src/config/appConfig.tsx b/src/config/appConfig.tsx
+index a2103a9..aa61d40 100644
+--- a/src/config/appConfig.tsx
++++ b/src/config/appConfig.tsx
+@@ -18,6 +18,7 @@ export interface AppConfig {
+ export const APP_IDS: AppId[] = [
+   "claude",
+   "claude-desktop",
++  "claude-science",
+   "codex",
+   "gemini",
+   "opencode",
+@@ -26,16 +27,16 @@ export const APP_IDS: AppId[] = [
+ ];
+ 
+ /** App IDs shown in Skills panels (excludes OpenClaw — it doesn't support Skills) */
+-export const SKILLS_APP_IDS: AppId[] = [
++export const SKILLS_APP_IDS = [
+   "claude",
+   "codex",
+   "gemini",
+   "opencode",
+   "hermes",
+-];
++] satisfies AppId[];
+ 
+ /** App IDs shown in MCP panels (excludes OpenClaw) */
+-export const MCP_APP_IDS: AppId[] = [...SKILLS_APP_IDS];
++export const MCP_APP_IDS = [...SKILLS_APP_IDS] satisfies AppId[];
+ 
+ export const APP_ICON_MAP: Record<AppId, AppConfig> = {
+   claude: {
+@@ -54,6 +55,14 @@ export const APP_ICON_MAP: Record<AppId, AppConfig> = {
+     badgeClass:
+       "bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 border-0 gap-1.5",
+   },
++  "claude-science": {
++    label: "Claude Science",
++    icon: <ClaudeIcon size={14} />,
++    activeClass:
++      "bg-cyan-500/10 ring-1 ring-cyan-500/20 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300",
++    badgeClass:
++      "bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-500/20 border-0 gap-1.5",
++  },
+   codex: {
+     label: "Codex",
+     icon: <CodexIcon size={14} />,
+diff --git a/src/hooks/useDirectorySettings.ts b/src/hooks/useDirectorySettings.ts
+index 7034732..79e37db 100644
+--- a/src/hooks/useDirectorySettings.ts
++++ b/src/hooks/useDirectorySettings.ts
+@@ -5,7 +5,7 @@ import { homeDir, join } from "@tauri-apps/api/path";
+ import { settingsApi, type AppId } from "@/lib/api";
+ import type { SettingsFormState } from "./useSettingsForm";
+ 
+-export type DirectoryAppId = Exclude<AppId, "claude-desktop">;
++export type DirectoryAppId = Exclude<AppId, "claude-desktop" | "claude-science">;
+ type AppDirectoryKey =
+   | "claude"
+   | "codex"
+diff --git a/src/hooks/useProviderActions.ts b/src/hooks/useProviderActions.ts
+index 2f03eb1..1eec254 100644
+--- a/src/hooks/useProviderActions.ts
++++ b/src/hooks/useProviderActions.ts
+@@ -234,6 +234,21 @@ export function useProviderActions(
+         const result = await switchProviderMutation.mutateAsync(provider.id);
+         await syncClaudePlugin(provider);
+ 
++        if (activeApp === "claude-science") {
++          try {
++            await providersApi.applyClaudeScienceProvider(provider, false);
++          } catch (error) {
++            const detail =
++              extractErrorMessage(error) ||
++              t("notifications.claudeScienceApplyFailed", {
++                defaultValue:
++                  "Claude Science API Bridge 未响应，请先启动 Bridge 后重试",
++              });
++            toast.error(detail, { duration: 6000 });
++            return;
++          }
++        }
++
+         // Show backfill warning if present
+         if (result?.warnings?.length) {
+           toast.warning(
+@@ -252,6 +267,9 @@ export function useProviderActions(
+           if (activeApp === "codex") {
+             messageKey = "notifications.codexRestartRequired";
+             defaultMessage = "切换成功，请重启客户端以生效";
++          } else if (activeApp === "claude-science") {
++            messageKey = "notifications.claudeScienceSwitchSuccess";
++            defaultMessage = "切换成功，已应用到 Claude Science API Bridge";
+           } else if (activeApp === "claude-desktop") {
+             if (provider.meta?.claudeDesktopMode === "proxy") {
+               messageKey = "notifications.claudeDesktopProxyRestartRequired";
+diff --git a/src/i18n/locales/en.json b/src/i18n/locales/en.json
+index debf8bb..7c1dc70 100644
+--- a/src/i18n/locales/en.json
++++ b/src/i18n/locales/en.json
+@@ -231,6 +231,8 @@
+     "codexRestartRequired": "Switched successfully. Restart the client to apply changes.",
+     "claudeDesktopRestartRequired": "Switched successfully. Restart Claude Desktop to apply changes.",
+     "claudeDesktopProxyRestartRequired": "Switched successfully. Keep CC Switch running and restart Claude Desktop to apply changes.",
++    "claudeScienceSwitchSuccess": "Switched successfully and applied to Claude Science API Bridge.",
++    "claudeScienceApplyFailed": "Claude Science API Bridge did not respond. Start the Bridge and try again.",
+     "addToConfigSuccess": "Added to config",
+     "removeFromConfigSuccess": "Removed from config",
+     "switchFailedTitle": "Switch failed",
+@@ -876,6 +878,8 @@
+     "claudeCode": "Claude Code",
+     "claudeDesktop": "Claude Desktop",
+     "claude-desktop": "Claude Desktop",
++    "claudeScience": "Claude Science",
++    "claude-science": "Claude Science",
+     "codex": "Codex",
+     "gemini": "Gemini",
+     "opencode": "OpenCode",
+diff --git a/src/i18n/locales/ja.json b/src/i18n/locales/ja.json
+index 1240051..add60d5 100644
+--- a/src/i18n/locales/ja.json
++++ b/src/i18n/locales/ja.json
+@@ -231,6 +231,8 @@
+     "codexRestartRequired": "切り替えました。反映するにはクライアントを再起動してください",
+     "claudeDesktopRestartRequired": "切り替えました。反映するには Claude Desktop を再起動してください",
+     "claudeDesktopProxyRestartRequired": "切り替えました。CC Switch を起動したまま Claude Desktop を再起動してください",
++    "claudeScienceSwitchSuccess": "切り替えました。Claude Science API Bridge に適用済みです。",
++    "claudeScienceApplyFailed": "Claude Science API Bridge が応答しません。Bridge を起動してから再試行してください。",
+     "addToConfigSuccess": "設定に追加しました",
+     "removeFromConfigSuccess": "設定から削除しました",
+     "switchFailedTitle": "切り替えに失敗しました",
+@@ -876,6 +878,8 @@
+     "claudeCode": "Claude Code",
+     "claudeDesktop": "Claude Desktop",
+     "claude-desktop": "Claude Desktop",
++    "claudeScience": "Claude Science",
++    "claude-science": "Claude Science",
+     "codex": "Codex",
+     "gemini": "Gemini",
+     "opencode": "OpenCode",
+diff --git a/src/i18n/locales/zh-TW.json b/src/i18n/locales/zh-TW.json
+index 0e6650b..2509fd1 100644
+--- a/src/i18n/locales/zh-TW.json
++++ b/src/i18n/locales/zh-TW.json
+@@ -231,6 +231,8 @@
+     "codexRestartRequired": "切換成功，請重新啟動客戶端以套用",
+     "claudeDesktopRestartRequired": "切換成功，重新啟動 Claude Desktop 後生效",
+     "claudeDesktopProxyRestartRequired": "切換成功，請保持 CC Switch 執行，並重新啟動 Claude Desktop 後生效",
++    "claudeScienceSwitchSuccess": "切換成功，已套用至 Claude Science API Bridge",
++    "claudeScienceApplyFailed": "Claude Science API Bridge 未回應，請先啟動 Bridge 後重試",
+     "addToConfigSuccess": "已新增至設定",
+     "removeFromConfigSuccess": "已從設定移除",
+     "switchFailedTitle": "切換失敗",
+@@ -847,6 +849,8 @@
+     "claudeCode": "Claude Code",
+     "claudeDesktop": "Claude Desktop",
+     "claude-desktop": "Claude Desktop",
++    "claudeScience": "Claude Science",
++    "claude-science": "Claude Science",
+     "codex": "Codex",
+     "gemini": "Gemini",
+     "opencode": "OpenCode",
+diff --git a/src/i18n/locales/zh.json b/src/i18n/locales/zh.json
+index 9c310a2..7b19582 100644
+--- a/src/i18n/locales/zh.json
++++ b/src/i18n/locales/zh.json
+@@ -231,6 +231,8 @@
+     "codexRestartRequired": "切换成功，请重启客户端以生效",
+     "claudeDesktopRestartRequired": "切换成功，重启 Claude Desktop 后生效",
+     "claudeDesktopProxyRestartRequired": "切换成功，请保持 CC Switch 运行，并重启 Claude Desktop 后生效",
++    "claudeScienceSwitchSuccess": "切换成功，已应用到 Claude Science API Bridge",
++    "claudeScienceApplyFailed": "Claude Science API Bridge 未响应，请先启动 Bridge 后重试",
+     "addToConfigSuccess": "已添加到配置",
+     "removeFromConfigSuccess": "已从配置移除",
+     "switchFailedTitle": "切换失败",
+@@ -876,6 +878,8 @@
+     "claudeCode": "Claude Code",
+     "claudeDesktop": "Claude Desktop",
+     "claude-desktop": "Claude Desktop",
++    "claudeScience": "Claude Science",
++    "claude-science": "Claude Science",
+     "codex": "Codex",
+     "gemini": "Gemini",
+     "opencode": "OpenCode",
+diff --git a/src/lib/api/providers.ts b/src/lib/api/providers.ts
+index cbdb6a5..9fa91c6 100644
+--- a/src/lib/api/providers.ts
++++ b/src/lib/api/providers.ts
+@@ -91,6 +91,30 @@ export const providersApi = {
+     return await invoke("switch_provider", { id, app: appId });
+   },
+ 
++  async applyClaudeScienceProvider(
++    provider: Provider,
++    restart = false,
++  ): Promise<Record<string, unknown>> {
++    const response = await fetch(
++      "http://127.0.0.1:9876/api/ccswitch/apply-provider",
++      {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify({ provider, restart }),
++      },
++    );
++    const payload = (await response.json().catch(() => ({}))) as {
++      ok?: boolean;
++      error?: string;
++    };
++    if (!response.ok || payload.ok === false) {
++      throw new Error(
++        payload.error || `Claude Science API Bridge returned ${response.status}`,
++      );
++    }
++    return payload as Record<string, unknown>;
++  },
++
+   async importDefault(appId: AppId): Promise<boolean> {
+     return await invoke("import_default_config", { app: appId });
+   },
+diff --git a/src/lib/api/types.ts b/src/lib/api/types.ts
+index 72b5ec2..8336b06 100644
+--- a/src/lib/api/types.ts
++++ b/src/lib/api/types.ts
+@@ -2,6 +2,7 @@
+ export type AppId =
+   | "claude"
+   | "claude-desktop"
++  | "claude-science"
+   | "codex"
+   | "gemini"
+   | "opencode"
+diff --git a/src/lib/schemas/settings.ts b/src/lib/schemas/settings.ts
+index dbdff5e..38e89f0 100644
+--- a/src/lib/schemas/settings.ts
++++ b/src/lib/schemas/settings.ts
+@@ -29,6 +29,7 @@ export const settingsSchema = z.object({
+   // 当前供应商 ID（设备级）
+   currentProviderClaude: z.string().optional(),
+   currentProviderClaudeDesktop: z.string().optional(),
++  currentProviderClaudeScience: z.string().optional(),
+   currentProviderCodex: z.string().optional(),
+   currentProviderGemini: z.string().optional(),
+ 
+diff --git a/src/types.ts b/src/types.ts
+index ecc1e52..8465871 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -276,6 +276,7 @@ export type ClaudeApiKeyField = "ANTHROPIC_AUTH_TOKEN" | "ANTHROPIC_API_KEY";
+ export interface VisibleApps {
+   claude: boolean;
+   "claude-desktop": boolean;
++  "claude-science": boolean;
+   codex: boolean;
+   gemini: boolean;
+   opencode: boolean;
+@@ -403,6 +404,8 @@ export interface Settings {
+   currentProviderClaude?: string;
+   // 当前 Claude Desktop 供应商 ID（优先于数据库 is_current）
+   currentProviderClaudeDesktop?: string;
++  // 当前 Claude Science 供应商 ID（优先于数据库 is_current）
++  currentProviderClaudeScience?: string;
+   // 当前 Codex 供应商 ID（优先于数据库 is_current）
+   currentProviderCodex?: string;
+   // 当前 Gemini 供应商 ID（优先于数据库 is_current）
+diff --git a/src/types/proxy.ts b/src/types/proxy.ts
+index 75f8c24..b02222b 100644
+--- a/src/types/proxy.ts
++++ b/src/types/proxy.ts
+@@ -44,6 +44,7 @@ export interface ProxyServerInfo {
+ export interface ProxyTakeoverStatus {
+   claude: boolean;
+   "claude-desktop"?: boolean;
++  "claude-science"?: boolean;
+   codex: boolean;
+   gemini: boolean;
+   opencode: boolean;
+diff --git a/tests/msw/state.ts b/tests/msw/state.ts
+index 85b9bc2..fa13588 100644
+--- a/tests/msw/state.ts
++++ b/tests/msw/state.ts
+@@ -36,6 +36,7 @@ const createDefaultProviders = (): ProvidersByApp => ({
+     },
+   },
+   "claude-desktop": {},
++  "claude-science": {},
+   codex: {
+     "codex-1": {
+       id: "codex-1",
+@@ -77,6 +78,7 @@ const createDefaultProviders = (): ProvidersByApp => ({
+ const createDefaultCurrent = (): CurrentProviderState => ({
+   claude: "claude-1",
+   "claude-desktop": "",
++  "claude-science": "",
+   codex: "codex-1",
+   gemini: "gemini-1",
+   opencode: "",
+@@ -171,6 +173,7 @@ let mcpConfigs: McpConfigState = {
+     },
+   },
+   "claude-desktop": {},
++  "claude-science": {},
+   codex: {
+     httpServer: {
+       id: "httpServer",
+@@ -239,6 +242,7 @@ export const resetProviderState = () => {
+       },
+     },
+     "claude-desktop": {},
++    "claude-science": {},
+     codex: {
+       httpServer: {
+         id: "httpServer",
