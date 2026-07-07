@@ -525,12 +525,15 @@ open -a "Claude Science"</span></div></div>
         <div class="panel-head"><div class="panel-title"><span class="ico">⇆</span> CC Switch · Claude Science</div><span class="panel-sub">独立于 Claude Desktop</span></div>
         <div class="panel-body">
           <div class="result-box show" id="ccswitchResult" style="display:block;margin:0 0 12px"></div>
+          <div class="result-box show" id="ccswitchDeployResult" style="display:block;margin:0 0 12px"></div>
           <div class="btn-row">
             <button class="btn primary sm" onclick="syncCcSwitchScience()" id="syncCcSwitchBtn">同步 Claude Science 配置</button>
+            <button class="btn primary sm" onclick="deployCcSwitch()" id="deployCcSwitchBtn">一键部署补丁版</button>
+            <button class="btn sm" onclick="restoreCcSwitch()" id="restoreCcSwitchBtn">恢复原版</button>
             <button class="btn sm" onclick="openCcSwitch()">打开 CC Switch</button>
             <button class="btn sm" onclick="loadCcSwitchStatus(true)">刷新状态</button>
           </div>
-          <div class="hint" style="margin-top:10px;color:var(--text-faint);font-size:12px">当前官方 CC Switch 需要源码补丁后才会显示 <code>Claude Science</code> 独立面板；这里写入的是 <code>app_type=claude-science</code>，不会影响 Claude Desktop 或 Claude Code。</div>
+          <div class="hint" style="margin-top:10px;color:var(--text-faint);font-size:12px">部署会先备份当前 <code>CC Switch.app</code>，再安装带 <code>Claude Science</code> 面板的补丁版；恢复会使用最近备份。不会改 Clash、系统代理、hosts、证书或 443。</div>
         </div>
       </div>
 
@@ -1452,6 +1455,40 @@ async function loadCcSwitchStatus(showToast = false) {
     box.className = 'result-box show bad';
     box.innerHTML = `<strong>无法读取 CC Switch</strong><div class="rtxt">${escapeHtml(String(e))}</div>`;
   }
+  await loadCcSwitchDeployStatus(false);
+}
+function renderCcSwitchDeployStatus(res) {
+  const box = $('ccswitchDeployResult');
+  if (!box) return;
+  if (!res || !res.ok) {
+    box.className = 'result-box show bad';
+    box.innerHTML = `<strong>无法读取部署状态</strong><div class="rtxt">${escapeHtml((res && res.error) || '')}</div>`;
+    return;
+  }
+  const installed = (res.installed || []).filter(x => x.exists);
+  const primary = installed[0] || {};
+  const running = (res.running || [])[0] || {};
+  const backups = res.backups || [];
+  const source = (res.patched_sources || []).find(x => x.exists && x.patched);
+  const state = primary.patched ? '已部署补丁版' : '当前安装版未包含 Claude Science 面板';
+  const cls = primary.patched ? 'ok' : 'bad';
+  const lines = [
+    primary.path ? `安装位置：${primary.path}` : '安装位置：未检测到',
+    running.command ? `运行中：${running.command}` : '运行中：未检测到 CC Switch 进程',
+    source ? `补丁源：${source.path}` : '补丁源：将从 GitHub Release 下载',
+    backups[0] ? `最近备份：${backups[0].path}` : '最近备份：暂无',
+  ];
+  box.className = 'result-box show ' + cls;
+  box.innerHTML = `<strong>${escapeHtml(state)}</strong><div class="rtxt">${lines.map(escapeHtml).join('<br>')}</div>`;
+}
+async function loadCcSwitchDeployStatus(showToast = false) {
+  try {
+    const res = await api('/api/ccswitch-deploy-status');
+    renderCcSwitchDeployStatus(res);
+    if (showToast && res.ok) toast('CC Switch 部署状态已刷新', 'success');
+  } catch (e) {
+    renderCcSwitchDeployStatus({ ok: false, error: String(e) });
+  }
 }
 async function syncCcSwitchScience() {
   const btn = $('syncCcSwitchBtn');
@@ -1468,6 +1505,56 @@ async function syncCcSwitchScience() {
     }
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = btn.dataset.oldText || '同步 Claude Science 配置'; }
+  }
+}
+function setCcSwitchDeployButtons(disabled) {
+  for (const id of ['deployCcSwitchBtn', 'restoreCcSwitchBtn', 'syncCcSwitchBtn']) {
+    const btn = $(id);
+    if (btn) btn.disabled = disabled;
+  }
+}
+async function deployCcSwitch() {
+  const btn = $('deployCcSwitchBtn');
+  if (btn) { btn.dataset.oldText = btn.textContent; btn.textContent = '部署中…'; }
+  setCcSwitchDeployButtons(true);
+  toast('正在部署补丁版 CC Switch…', 'info');
+  try {
+    const res = await api('/api/ccswitch-deploy', { method: 'POST' });
+    if (res.ok) {
+      toast('补丁版 CC Switch 已部署', 'success');
+    } else {
+      toast('部署失败：' + (res.error || ''), 'error');
+    }
+    await loadCcSwitchStatus(false);
+    const box = $('ccswitchDeployResult');
+    if (box && res.output) {
+      box.innerHTML += `<div class="cmd" style="margin-top:10px;white-space:pre-wrap">${escapeHtml(res.output)}</div>`;
+    }
+  } finally {
+    setCcSwitchDeployButtons(false);
+    if (btn) btn.textContent = btn.dataset.oldText || '一键部署补丁版';
+  }
+}
+async function restoreCcSwitch() {
+  const btn = $('restoreCcSwitchBtn');
+  if (btn) { btn.dataset.oldText = btn.textContent; btn.textContent = '恢复中…'; }
+  setCcSwitchDeployButtons(true);
+  toast('正在恢复原版 CC Switch…', 'info');
+  try {
+    const res = await api('/api/ccswitch-restore', { method: 'POST' });
+    if (res.ok) {
+      toast('CC Switch 已恢复', 'success');
+    } else {
+      toast('恢复失败：' + (res.error || ''), 'error');
+    }
+    await loadCcSwitchStatus(false);
+    const box = $('ccswitchDeployResult');
+    if (box && res.output) {
+      box.innerHTML += `<div class="cmd" style="margin-top:10px;white-space:pre-wrap">${escapeHtml(res.output)}</div>`;
+    }
+  } finally {
+    setCcSwitchDeployButtons(false);
+    if (btn) btn.textContent = btn.dataset.oldText || '恢复原版';
   }
 }
 async function openCcSwitch() {

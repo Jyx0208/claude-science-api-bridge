@@ -3482,6 +3482,152 @@ def run_ccswitch_integration(args: list[str], timeout: int = 30) -> dict:
     return payload
 
 
+def app_contains_claude_science(app_path: Path) -> bool:
+    if not app_path.exists():
+        return False
+    needles = (b"claude-science", b"Claude Science")
+    checked = 0
+    for path in app_path.rglob("*"):
+        if not path.is_file():
+            continue
+        checked += 1
+        if checked > 500:
+            break
+        try:
+            if path.stat().st_size > 100 * 1024 * 1024:
+                continue
+            data = path.read_bytes()
+        except Exception:
+            continue
+        if any(n in data for n in needles):
+            return True
+    return False
+
+
+def ccswitch_app_info(path: Path) -> dict:
+    path = path.expanduser()
+    exists = path.exists()
+    return {
+        "path": str(path),
+        "exists": exists,
+        "patched": bool(exists and app_contains_claude_science(path)),
+    }
+
+
+def ccswitch_running_processes() -> list[dict]:
+    try:
+        result = subprocess.run(
+            ["ps", "-Ao", "pid=,command="],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return []
+    rows = []
+    for line in (result.stdout or "").splitlines():
+        text = line.strip()
+        if not text or "cc-switch" not in text:
+            continue
+        if "rg " in text or "grep " in text:
+            continue
+        pid, _, command = text.partition(" ")
+        rows.append({
+            "pid": pid.strip(),
+            "command": command.strip(),
+            "patched": "/tmp/cc-switch-src/" in command or "/.claude-science/cc-switch-src/" in command,
+        })
+    return rows
+
+
+def ccswitch_backups() -> list[dict]:
+    root = Path.home() / ".claude-science" / "ccswitch-backups"
+    if not root.exists():
+        return []
+    backups = []
+    for item in sorted(root.iterdir(), reverse=True):
+        app = item / "CC Switch.app"
+        if not app.exists():
+            continue
+        backups.append({
+            "path": str(item),
+            "app_path": str(app),
+            "name": item.name,
+            "patched": app_contains_claude_science(app),
+        })
+    return backups[:10]
+
+
+def ccswitch_patched_sources() -> list[dict]:
+    paths = [
+        Path.home() / ".claude-science" / "cc-switch-src" / "src-tauri" / "target" / "release" / "bundle" / "macos" / "CC Switch.app",
+        Path("/tmp/cc-switch-src/src-tauri/target/release/bundle/macos/CC Switch.app"),
+    ]
+    return [ccswitch_app_info(p) for p in paths]
+
+
+def run_ccswitch_app_script(script_name: str, timeout: int = 180) -> dict:
+    script = PROXY_DIR / "scripts" / script_name
+    if not script.exists():
+        return {"ok": False, "error": f"Script not found: {script}"}
+    try:
+        result = subprocess.run(
+            ["bash", str(script)],
+            cwd=str(PROXY_DIR),
+            env={**os.environ, "BRIDGE_GITHUB_REPO": GITHUB_REPO},
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": f"{script_name} timed out after {timeout} seconds."}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    output = "\n".join(x for x in [result.stdout.strip(), result.stderr.strip()] if x)
+    return {
+        "ok": result.returncode == 0,
+        "returncode": result.returncode,
+        "output": output[-4000:],
+    }
+
+
+@app.get("/api/ccswitch-deploy-status")
+async def api_ccswitch_deploy_status():
+    if sys.platform != "darwin":
+        return {"ok": False, "error": "CC Switch deployment is macOS-only."}
+    installed = [
+        ccswitch_app_info(Path("/Applications/CC Switch.app")),
+        ccswitch_app_info(Path.home() / "Applications" / "CC Switch.app"),
+    ]
+    return {
+        "ok": True,
+        "installed": installed,
+        "patched_sources": ccswitch_patched_sources(),
+        "running": ccswitch_running_processes(),
+        "backups": ccswitch_backups(),
+    }
+
+
+@app.post("/api/ccswitch-deploy")
+async def api_ccswitch_deploy():
+    if sys.platform != "darwin":
+        return {"ok": False, "error": "CC Switch deployment is macOS-only."}
+    sync = run_ccswitch_integration(["--activate"], timeout=30)
+    result = run_ccswitch_app_script("deploy-ccswitch.sh", timeout=180)
+    result["sync"] = sync
+    result["status"] = (await api_ccswitch_deploy_status()) if result.get("ok") else {}
+    return result
+
+
+@app.post("/api/ccswitch-restore")
+async def api_ccswitch_restore():
+    if sys.platform != "darwin":
+        return {"ok": False, "error": "CC Switch restore is macOS-only."}
+    result = run_ccswitch_app_script("restore-ccswitch.sh", timeout=120)
+    result["status"] = (await api_ccswitch_deploy_status()) if result.get("ok") else {}
+    return result
+
+
 @app.get("/api/ccswitch-status")
 async def api_ccswitch_status():
     return run_ccswitch_integration(["--status"], timeout=15)

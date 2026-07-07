@@ -103,6 +103,16 @@ src-tauri/target/release/bundle/macos/CC-Switch-Claude-Science-aarch64.zip
 
 脚本会对 `.app` 做本地 ad-hoc 签名，并关闭上游 updater artifact 签名要求。DMG 不是默认目标，因为未配置 Apple Developer 公证和 GUI 装饰环境时，DMG 步骤比 `.app` 更容易失败；如确实需要，可添加 `--dmg`。
 
+## Dashboard 一键部署与恢复
+
+Bridge Dashboard 的 “CC Switch · Claude Science” 面板提供：
+
+- 同步 Claude Science 配置：把 Bridge provider profiles 写入 CC Switch 数据库。
+- 一键部署补丁版：备份当前 `CC Switch.app`，安装带 `Claude Science` 面板的补丁版，并重新打开 CC Switch。
+- 恢复原版：从 `~/.claude-science/ccswitch-backups/` 最近备份恢复。
+
+部署脚本只替换 `CC Switch.app` 本体，不修改 Clash、VPN、TUN、DNS、系统代理、`/etc/hosts`、证书信任或 443 端口。
+
 ## 切换链路
 
 1. Bridge Dashboard 或 `scripts/integrate-ccswitch.py` 把 Bridge provider profiles 同步到 CC Switch DB。

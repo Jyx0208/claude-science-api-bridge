@@ -169,6 +169,8 @@ cd ~/.claude-science/proxy
 
 脚本默认生成 macOS `.app` 和 zip，并对 `.app` 做本地 ad-hoc 签名；不会要求 CC Switch upstream 的 updater 私钥。DMG 打包在部分无 GUI/无公证环境容易失败，如确实需要可额外加 `--dmg`。
 
+Dashboard 的“CC Switch · Claude Science”面板还提供“一键部署补丁版”和“恢复原版”按钮。部署会先备份当前 `CC Switch.app` 到 `~/.claude-science/ccswitch-backups/`，再安装补丁版；恢复会从最近备份还原。
+
 补丁版 CC Switch 会沿用原有 AppSwitcher、Provider 列表、Provider 表单和 toast 风格，新增独立 `Claude Science` 面板。切换 Provider 时只更新 `app_type=claude-science`，并调用 Bridge 的 `/api/ccswitch/apply-provider`；不会写 Claude Desktop profile，也不会写 Claude Code live config。详细说明见 [docs/ccswitch-claude-science.md](docs/ccswitch-claude-science.md)。
 
 ## 常见 provider 配置
