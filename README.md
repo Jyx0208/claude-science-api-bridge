@@ -160,6 +160,15 @@ cd ~/.claude-science/proxy
 ./scripts/patch-ccswitch-source.sh
 ```
 
+如果要让 agent 直接构建补丁版 CC Switch，可以运行：
+
+```bash
+cd ~/.claude-science/proxy
+./scripts/build-patched-ccswitch.sh --install-rust --open
+```
+
+脚本默认生成 macOS `.app` 和 zip，并对 `.app` 做本地 ad-hoc 签名；不会要求 CC Switch upstream 的 updater 私钥。DMG 打包在部分无 GUI/无公证环境容易失败，如确实需要可额外加 `--dmg`。
+
 补丁版 CC Switch 会沿用原有 AppSwitcher、Provider 列表、Provider 表单和 toast 风格，新增独立 `Claude Science` 面板。切换 Provider 时只更新 `app_type=claude-science`，并调用 Bridge 的 `/api/ccswitch/apply-provider`；不会写 Claude Desktop profile，也不会写 Claude Code live config。详细说明见 [docs/ccswitch-claude-science.md](docs/ccswitch-claude-science.md)。
 
 ## 常见 provider 配置
@@ -382,7 +391,7 @@ https://github.com/Jyx0208/claude-science-api-bridge
 10. 如果模型支持读图，运行 VERIFY_IMAGE=1 ./scripts/verify-proxy.sh 做真实图片输入验证。
 11. 如果是 macOS，运行 ./scripts/start-claude-science.sh，让脚本自动刷新 token、补丁本地 daemon 复制件并重启 Claude Science。
 12. 再检查 http://127.0.0.1:9876/api/recent-requests，确认请求命中了本地代理。
-13. 如果我要集成 CC Switch，请运行 python3 scripts/integrate-ccswitch.py --activate 同步并选中当前 Bridge provider profile；如果需要独立 Claude Science 面板，请运行 ./scripts/patch-ccswitch-source.sh 套用 CC Switch 源码补丁并构建补丁版 CC Switch。不要把 Claude Science 写进 Claude Desktop 或 Claude Code 面板。
+13. 如果我要集成 CC Switch，请运行 python3 scripts/integrate-ccswitch.py --activate 同步并选中当前 Bridge provider profile；如果需要独立 Claude Science 面板，请运行 ./scripts/build-patched-ccswitch.sh --install-rust 构建补丁版 CC Switch。不要把 Claude Science 写进 Claude Desktop 或 Claude Code 面板。
 
 如果遇到问题：
 1. 先运行 ./scripts/doctor.sh。
