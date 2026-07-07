@@ -6,11 +6,12 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 APP_NAME="Claude Science API Bridge"
 APP_BUNDLE="$PROJECT_DIR/dist/$APP_NAME.app"
 DMG_PATH="$PROJECT_DIR/dist/$APP_NAME.dmg"
+STABLE_DMG_PATH="$PROJECT_DIR/dist/Claude.Science.API.Bridge.dmg"
 RESOURCES_DIR="$APP_BUNDLE/Contents/Resources"
 MACOS_DIR="$APP_BUNDLE/Contents/MacOS"
 APP_VERSION="$(tr -d '[:space:]' < "$PROJECT_DIR/VERSION")"
 
-rm -rf "$APP_BUNDLE" "$DMG_PATH"
+rm -rf "$APP_BUNDLE" "$DMG_PATH" "$STABLE_DMG_PATH"
 mkdir -p "$RESOURCES_DIR/proxy" "$MACOS_DIR"
 
 rsync -a "$PROJECT_DIR/" "$RESOURCES_DIR/proxy/" \
@@ -70,8 +71,10 @@ fi
 
 if command -v hdiutil >/dev/null 2>&1; then
   hdiutil create -volname "$APP_NAME" -srcfolder "$APP_BUNDLE" -ov -format UDZO "$DMG_PATH" >/dev/null
+  cp "$DMG_PATH" "$STABLE_DMG_PATH"
   echo "Built app: $APP_BUNDLE"
   echo "Built dmg: $DMG_PATH"
+  echo "Built stable dmg: $STABLE_DMG_PATH"
 else
   echo "Built app: $APP_BUNDLE"
   echo "hdiutil not found; skipped DMG creation."
