@@ -1669,7 +1669,13 @@ def _dedupe_repeated_visible_text(text: str) -> str:
 
 def strip_assistant_reasoning_markup(text: str) -> str:
     """Hide provider-leaked reasoning tags and keep only final visible text."""
-    if not isinstance(text, str) or not text.strip():
+    if not isinstance(text, str):
+        return text or ""
+    # Streaming flushes every chunk through this helper. Tag-free fragments
+    # must keep leading/trailing spaces or words glue across chunk boundaries.
+    if not REASONING_ANY_TAG_RE.search(text):
+        return text
+    if not text.strip():
         return text or ""
 
     close_match = _last_regex_match(REASONING_CLOSE_TAG_RE, text)
@@ -1695,12 +1701,12 @@ def strip_assistant_trace_text(text: str, *, aggressive: bool = False) -> str:
     Those are not tool results or final answers, so hide them before returning
     an Anthropic response to Claude Science.
     """
-    if not isinstance(text, str) or not text.strip():
+    if not isinstance(text, str) or not text:
         return text or ""
 
     cue_hits = len(TRACE_CUE_RE.findall(text[:1600]))
     if cue_hits == 0:
-        return text.strip()
+        return text
 
     lines = text.splitlines()
     kept = []
@@ -1713,7 +1719,9 @@ def strip_assistant_trace_text(text: str, *, aggressive: bool = False) -> str:
         dropping_leading_trace = False
         kept.append(line)
 
-    cleaned = "\n".join(kept).strip()
+    cleaned = "\n".join(kept)
+    if dropped:
+        cleaned = cleaned.strip()
 
     # If a tool call follows, pre-tool narration is usually just scratchpad.
     if aggressive and cue_hits:
@@ -1723,7 +1731,7 @@ def strip_assistant_trace_text(text: str, *, aggressive: bool = False) -> str:
     meaningful_lines = [line for line in lines if line.strip()]
     if meaningful_lines and dropped >= len(meaningful_lines):
         return ""
-    return cleaned or text.strip()
+    return cleaned or text
 
 
 def _should_hold_visible_stream_text(text: str) -> bool:

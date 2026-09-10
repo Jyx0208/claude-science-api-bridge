@@ -1091,6 +1091,40 @@ def test_streaming_heartbeat_emits_ping_after_message_start_idle():
     assert payloads[1]["type"] == "ping"
 
 
+def test_tag_free_sanitizers_keep_chunk_edge_spaces():
+    assert proxy.strip_assistant_reasoning_markup(" receptor") == " receptor"
+    assert proxy.strip_assistant_trace_text(" receptor") == " receptor"
+    assert proxy.strip_assistant_reasoning_markup("is ") == "is "
+
+
+def test_streaming_preserves_spaces_between_chunks():
+    chunks = [
+        {"choices": [{"delta": {"content": "is "}}]},
+        {"choices": [{"delta": {"content": "the "}}]},
+        {"choices": [{"delta": {"content": "recommended"}}]},
+        {"choices": [{"delta": {}, "finish_reason": "stop"}], "usage": {"completion_tokens": 3}},
+    ]
+
+    async def collect():
+        return [
+            event
+            async for event in proxy.translate_stream(
+                _FakeOpenAIStream(chunks),
+                "claude-sonnet-4-5",
+                "msg_spaces",
+                None,
+            )
+        ]
+
+    text = "".join(
+        payload.get("delta", {}).get("text", "")
+        for payload in _stream_payloads(asyncio.run(collect()))
+        if payload.get("type") == "content_block_delta"
+        and payload.get("delta", {}).get("type") == "text_delta"
+    )
+    assert text == "is the recommended"
+
+
 def test_invalid_json_returns_400_without_exception():
     client = TestClient(proxy.app)
     response = client.post("/v1/messages", data="", headers={"Content-Type": "application/json"})
