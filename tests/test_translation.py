@@ -456,6 +456,42 @@ def test_required_path_secret_protects_v1_and_does_not_log_secret():
     assert "/v1/models" in logs
 
 
+def test_local_2xx_is_logged_as_success_not_numeric_status():
+    client = TestClient(proxy.app)
+    proxy.request_log.clear()
+    response = client.get("/v1/models")
+    assert response.status_code == 200
+    models_logs = [row for row in proxy.request_log if "/v1/models" in row.get("model", "")]
+    assert models_logs, proxy.request_log
+    assert models_logs[0]["status"] == "success"
+    assert models_logs[0]["backend"] == "local"
+
+
+def test_dashboard_polling_is_not_recorded_in_recent_requests():
+    client = TestClient(proxy.app)
+    proxy.request_log.clear()
+    assert client.get("/health").status_code == 200
+    assert client.get("/api/recent-requests").status_code == 200
+    assert proxy.request_log == []
+
+
+def test_local_error_status_uses_error_prefix():
+    client = TestClient(proxy.app)
+    proxy.request_log.clear()
+    with config_values(proxy_auth_token="secret-test-token", proxy_auth_mode="required"):
+        denied = client.get("/v1/models")
+    assert denied.status_code == 403
+    assert proxy.request_log
+    assert proxy.request_log[0]["status"].startswith("error")
+
+
+def test_dashboard_classifies_numeric_2xx_as_success():
+    html = (ROOT / "static" / "dashboard.html").read_text()
+    assert "function isRequestSuccess" in html
+    assert "isRequestSuccess(last.status)" in html
+    assert "isRequestSuccess(r.status)" in html
+
+
 def test_siliconflow_forced_tool_choice_is_downgraded_to_auto():
     body = {
         "model": "claude-sonnet-4-5",

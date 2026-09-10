@@ -1565,19 +1565,24 @@ async function openCcSwitch() {
 
 // ════════════════════════ Logs ════════════════════════
 async function loadLogs() { try { logsCache = (await api('/api/recent-requests')).requests || []; renderLogs(); } catch (e) {} }
+function isRequestSuccess(status) {
+  if (status === 'success') return true;
+  const code = Number(status);
+  return Number.isInteger(code) && code >= 200 && code < 300;
+}
 function renderLogs() {
   const rows = logsCache;
-  const ok = rows.filter(r => r.status === 'success').length;
+  const ok = rows.filter(r => isRequestSuccess(r.status)).length;
   $('logTotal').textContent = rows.length; $('logOk').textContent = ok; $('logErr').textContent = rows.length - ok;
   const b = $('navLogBadge'); if (b) b.textContent = rows.length;
   const last = rows[0];
-  if (last) { $('sbReqDot').className = 'dot ' + (last.status === 'success' ? 'on' : 'off'); $('sbReq').textContent = `${last.status === 'success' ? '成功' : '失败'} · ${last.time}`; }
+  if (last) { $('sbReqDot').className = 'dot ' + (isRequestSuccess(last.status) ? 'on' : 'off'); $('sbReq').textContent = `${isRequestSuccess(last.status) ? '成功' : '失败'} · ${last.time}`; }
   else { $('sbReqDot').className = 'dot'; $('sbReq').textContent = '暂无'; }
-  const err = rows.find(r => r.status !== 'success');
+  const err = rows.find(r => !isRequestSuccess(r.status));
   if (err) { $('lastErrPanel').style.display = 'block'; $('lastErrText').textContent = `${err.time} · ${err.backend} · ${err.model} · 请求失败（详见 proxy 日志）`; }
   else $('lastErrPanel').style.display = 'none';
   $('logBody').innerHTML = rows.length
-    ? rows.map(r => `<tr class="log-row ${r.status !== 'success' ? 'is-error' : ''}"><td class="mono" style="color:var(--text-dim)">${escapeHtml(r.time)}</td><td><span class="tag">${escapeHtml(r.backend)}</span></td><td class="mono cell-clip">${escapeHtml(r.model)}</td><td>${r.stream ? '⇄' : '—'}</td><td class="st-${r.status === 'success' ? 'success' : 'error'}">${r.status === 'success' ? '✓ 成功' : '✕ 失败'}</td></tr>`).join('')
+    ? rows.map(r => `<tr class="log-row ${isRequestSuccess(r.status) ? '' : 'is-error'}"><td class="mono" style="color:var(--text-dim)">${escapeHtml(r.time)}</td><td><span class="tag">${escapeHtml(r.backend)}</span></td><td class="mono cell-clip">${escapeHtml(r.model)}</td><td>${r.stream ? '⇄' : '—'}</td><td class="st-${isRequestSuccess(r.status) ? 'success' : 'error'}">${isRequestSuccess(r.status) ? '✓ 成功' : '✕ 失败'}</td></tr>`).join('')
     : '<tr><td colspan="5" class="empty">暂无请求记录</td></tr>';
 }
 async function clearLogs() { await api('/api/recent-requests', { method: 'DELETE' }); logsCache = []; renderLogs(); toast('日志已清空', 'success'); }

@@ -1231,9 +1231,25 @@ def redact_proxy_auth_path(path: str) -> str:
     return path
 
 
+LOCAL_LOG_SKIP_PATHS = {
+    "/health",
+    "/dashboard",
+    "/favicon.ico",
+    "/api/recent-requests",
+    "/api/update-check",
+    "/api/update-install",
+}
+
+
+def local_event_status(status_code: int) -> str:
+    if 200 <= int(status_code) < 300:
+        return "success"
+    return f"error {status_code}"
+
+
 def log_local_event(request: Request, status_code: int):
     path = redact_proxy_auth_path(request.url.path)
-    if path.startswith("/static") or path in {"/dashboard", "/favicon.ico"}:
+    if path.startswith("/static") or path in LOCAL_LOG_SKIP_PATHS:
         return
     host = request.headers.get("host", "")
     entry = {
@@ -1241,7 +1257,7 @@ def log_local_event(request: Request, status_code: int):
         "backend": "local",
         "model": f"{request.method} {host}{path}",
         "stream": False,
-        "status": str(status_code),
+        "status": local_event_status(status_code),
     }
     request_log.append(entry)
     if len(request_log) > MAX_LOG_ENTRIES:
