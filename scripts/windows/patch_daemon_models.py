@@ -1,0 +1,382 @@
+#!/usr/bin/env python3
+"""Windows port of scripts/patch-daemon-models.sh.
+
+Byte-length-preserving model picker patch for the Claude Science Windows
+executable, driven by model_aliases in config.json. Also back-fills
+model_aliases / model_list_mode / model_menu_strategy in config.json the
+same way the macOS/Linux script does.
+
+Usage:
+    python patch_daemon_models.py [--target PATH] [--config PATH] [--state PATH]
+"""
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+PROJECT_DIR = Path(__file__).resolve().parent.parent.parent
+
+SLOTS = [
+    {
+        "slot": 1,
+        "original_id": "claude-opus-4-8",
+        "original_name": "Claude Opus 4.8",
+        "alias_id": "claude-opus-4-8",
+        "custom_alias_id": "byok-model-0001",
+        "default_name": "Kimi K2.6 Pro++",
+    },
+    {
+        "slot": 2,
+        "original_id": "claude-sonnet-5",
+        "original_name": "Claude Sonnet 5",
+        "alias_id": "claude-sonnet-5",
+        "custom_alias_id": "byok-model-0002",
+        "default_name": "BYOK Model 0002",
+    },
+    {
+        "slot": 3,
+        "original_id": "claude-sonnet-4-6",
+        "original_name": "Claude Sonnet 4.6",
+        "alias_id": "claude-sonnet-4-6",
+        "custom_alias_id": "byok-model-000003",
+        "default_name": "BYOK Model 000003",
+    },
+]
+
+
+def detect_target():
+    """Locate claude-science.exe via install.json, then known paths."""
+    base_dirs = [Path.home() / "AppData" / "Local" / "Programs" / "ClaudeScience"]
+    for base in base_dirs:
+        manifest = base / "install.json"
+        if manifest.is_file():
+            try:
+                info = json.loads(manifest.read_text(encoding="utf-8"))
+            except Exception:
+                info = {}
+            install_dir = str(info.get("install_dir") or "").strip()
+            if install_dir:
+                candidate = Path(install_dir) / "claude-science.exe"
+                if candidate.is_file():
+                    return candidate
+        candidate = base / "claude-science.exe"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def load_json(path, fallback):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return fallback
+
+
+def ascii_clean(value):
+    text = str(value or "")
+    text = text.replace("–", "-").replace("—", "-")
+    text = re.sub(r"[^\x20-\x7e]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def fit_bytes(value, size, fallback):
+    text = ascii_clean(value) or fallback
+    raw = text.encode("ascii", "ignore")
+    if len(raw) > size:
+        raw = raw[:size]
+        text = raw.decode("ascii", "ignore")
+    if len(raw) < size:
+        text = text + (" " * (size - len(raw)))
+    if len(text.encode("ascii")) != size:
+        raise SystemExit(f"cannot fit model label to {size} bytes: {value!r}")
+    return text
+
+
+def friendly_name(model):
+    model = ascii_clean(model)
+    lower = model.lower()
+    if "kimi-k2.6" in lower or "kimi-k2" in lower:
+        return "Kimi K2.6 Pro++"
+    if "/" in model:
+        return model.rsplit("/", 1)[-1]
+    return model or "BYOK Model"
+
+
+def normalize_aliases(raw):
+    if isinstance(raw, dict):
+        items = []
+        for alias_id, value in raw.items():
+            if isinstance(value, dict):
+                item = dict(value)
+                item.setdefault("id", alias_id)
+            else:
+                item = {"id": alias_id, "model": value}
+            items.append(item)
+    elif isinstance(raw, list):
+        items = raw
+    else:
+        items = []
+    out = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        alias_id = ascii_clean(item.get("id"))
+        if not alias_id:
+            continue
+        backend = ascii_clean(item.get("backend")).lower()
+        if backend not in {"", "deepseek", "openai", "custom"}:
+            backend = ""
+        model = ascii_clean(item.get("model")) or alias_id
+        display_name = ascii_clean(item.get("display_name") or item.get("name")) or friendly_name(model)
+        out.append({
+            "id": alias_id,
+            "backend": backend,
+            "model": model,
+            "display_name": display_name,
+        })
+    return out
+
+
+def check_locked(target: Path) -> bool:
+    try:
+        with target.open("r+b"):
+            return False
+    except PermissionError:
+        return True
+
+
+def verify_executable(target: Path) -> bool:
+    shim = target.with_name("claude-science.com")
+    probe = shim if shim.is_file() else target
+    try:
+        result = subprocess.run(
+            [str(probe), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--target", default="", help="Path to claude-science.exe")
+    parser.add_argument("--config", default=str(PROJECT_DIR / "config.json"))
+    parser.add_argument("--state", default=str(PROJECT_DIR / ".daemon-model-patch.json"))
+    args = parser.parse_args()
+
+    target = Path(args.target).expanduser() if args.target else detect_target()
+    if not target or not target.is_file():
+        print("Claude Science executable not found.")
+        print("Install Claude Science, or pass --target <path to claude-science.exe>.")
+        return 1
+
+    config_file = Path(args.config).expanduser()
+    state_file = Path(args.state).expanduser()
+    if not config_file.is_file():
+        print(f"Config file not found: {config_file}")
+        return 1
+
+    if check_locked(target):
+        print(f"File is locked (Claude Science is probably running): {target}")
+        print("Close Claude Science (or run scripts/windows/start-claude-science.ps1) and retry.")
+        return 1
+
+    config = load_json(config_file, {})
+    state = load_json(state_file, {})
+    old_slots = state.get("slots", []) if isinstance(state, dict) else []
+    old_by_slot = {
+        int(item.get("slot")): item
+        for item in old_slots
+        if isinstance(item, dict) and str(item.get("slot", "")).isdigit()
+    }
+
+    configured = normalize_aliases(config.get("model_aliases"))
+    default_backend = ascii_clean(config.get("default_backend")).lower() or "custom"
+    if default_backend not in {"deepseek", "openai", "custom"}:
+        default_backend = "custom"
+    menu_strategy = ascii_clean(config.get("model_menu_strategy")).lower().replace("-", "_")
+    if menu_strategy in {"custom", "custom_ids", "byok"}:
+        menu_strategy = "custom_ids"
+    elif menu_strategy in {"real", "real_ids", "native", "provider_ids"}:
+        menu_strategy = "real_ids"
+    else:
+        menu_strategy = "claude_compatible"
+    default_model = ascii_clean(config.get("force_model"))
+    if not default_model:
+        for key in ("custom_model_map", "deepseek_model_map", "openai_model_map"):
+            model_map = config.get(key)
+            if isinstance(model_map, dict) and model_map:
+                default_model = ascii_clean(next(iter(model_map.values())))
+                break
+    default_model = default_model or "Pro/moonshotai/Kimi-K2.6"
+
+    seed = configured[0] if configured else {
+        "backend": default_backend,
+        "model": default_model,
+        "display_name": friendly_name(default_model),
+    }
+
+    patch_aliases = []
+    for idx, slot in enumerate(SLOTS):
+        source = configured[idx] if idx < len(configured) else seed
+        if menu_strategy == "custom_ids":
+            alias_id = source.get("id") or slot["custom_alias_id"]
+        elif menu_strategy == "real_ids":
+            alias_id = source.get("model") or source.get("id") or slot["custom_alias_id"]
+        else:
+            alias_id = slot["alias_id"]
+        patch_aliases.append({
+            "id": alias_id,
+            "backend": source.get("backend") or default_backend,
+            "model": source.get("model") or default_model,
+            "display_name": source.get("display_name") or slot["default_name"],
+        })
+
+    changed_config = False
+    config_aliases = patch_aliases[:len(configured)] if configured else patch_aliases
+    if config.get("model_aliases") != config_aliases:
+        config["model_aliases"] = config_aliases
+        changed_config = True
+    if config.get("model_list_mode") != "aliases":
+        config["model_list_mode"] = "aliases"
+        changed_config = True
+    if config.get("model_menu_strategy") != menu_strategy:
+        config["model_menu_strategy"] = menu_strategy
+        changed_config = True
+    if changed_config:
+        config_file.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        print(f"Updated model aliases in {config_file}")
+
+    backup = target.with_name(target.name + ".byok-model-original")
+    try:
+        data = target.read_bytes()
+    except PermissionError:
+        print(f"Cannot read (Claude Science is probably running): {target}")
+        return 1
+    if not backup.exists():
+        shutil.copy2(target, backup)
+        print(f"Backup written: {backup}")
+    else:
+        print(f"Backup exists: {backup}")
+
+    patches = []
+    state_slots = []
+    for alias, slot in zip(patch_aliases, SLOTS):
+        id_len = len(slot["original_id"].encode("ascii"))
+        name_len = len(slot["original_name"].encode("ascii"))
+        new_id = fit_bytes(alias["id"], id_len, slot["alias_id"])
+        new_name = fit_bytes(alias["display_name"], name_len, slot["default_name"])
+        previous = old_by_slot.get(slot["slot"], {})
+
+        id_candidates = [
+            slot["original_id"],
+            previous.get("patched_id", ""),
+            new_id,
+        ]
+        name_candidates = [
+            slot["original_name"],
+            previous.get("patched_name", ""),
+            new_name,
+        ]
+        id_candidates = list(dict.fromkeys(c for c in id_candidates if c and len(c.encode("ascii")) == id_len))
+        name_candidates = list(dict.fromkeys(c for c in name_candidates if c and len(c.encode("ascii")) == name_len))
+
+        patches.append((slot["slot"], "id", id_candidates, new_id))
+        patches.append((slot["slot"], "name", name_candidates, new_name))
+        state_slots.append({
+            "slot": slot["slot"],
+            "id": alias["id"],
+            "model": alias["model"],
+            "backend": alias["backend"],
+            "display_name": alias["display_name"],
+            "patched_id": new_id,
+            "patched_name": new_name,
+        })
+
+    missing = []
+    for slot_no, kind, candidates, new_value in patches:
+        if not any(data.count(candidate.encode("ascii")) for candidate in candidates):
+            missing.append(f"slot {slot_no} {kind}: {' / '.join(candidates)}")
+    if missing and backup.exists():
+        print("Current daemon strings do not match patch state; restoring model backup before patch.")
+        shutil.copy2(backup, target)
+        data = target.read_bytes()
+        missing = []
+        for slot_no, kind, candidates, new_value in patches:
+            if not any(data.count(candidate.encode("ascii")) for candidate in candidates):
+                missing.append(f"slot {slot_no} {kind}: {' / '.join(candidates)}")
+    if missing:
+        print("Unsupported Claude Science build; expected model string(s) not found:")
+        for item in missing:
+            print(f"  - {item}")
+        return 1
+
+    patched = 0
+    try:
+        with target.open("r+b") as f:
+            for _slot_no, _kind, candidates, new_value in patches:
+                new_bytes = new_value.encode("ascii")
+                for candidate in candidates:
+                    old_bytes = candidate.encode("ascii")
+                    if old_bytes == new_bytes:
+                        continue
+                    start = 0
+                    while True:
+                        idx = data.find(old_bytes, start)
+                        if idx < 0:
+                            break
+                        f.seek(idx)
+                        f.write(new_bytes)
+                        data = data[:idx] + new_bytes + data[idx + len(old_bytes):]
+                        patched += 1
+                        start = idx + len(new_bytes)
+    except PermissionError:
+        print(f"Cannot write (Claude Science is probably running): {target}")
+        return 1
+
+    after = target.read_bytes()
+    for slot_state, slot in zip(state_slots, SLOTS):
+        if after.count(slot_state["patched_id"].encode("ascii")) == 0:
+            print(f"patch verification failed; alias id missing: {slot_state['patched_id']}")
+            return 1
+        if after.count(slot_state["patched_name"].encode("ascii")) == 0:
+            print(f"patch verification failed; alias label missing: {slot_state['patched_name']}")
+            return 1
+
+    state_file.write_text(json.dumps({
+        "target": str(target),
+        "slots": state_slots,
+    }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    if patched:
+        print(f"Patched {patched} model string occurrence(s) in {target}")
+    else:
+        print(f"Already patched: {target}")
+    print("Claude-facing model aliases:")
+    for item in state_slots[:len(config_aliases)]:
+        print(f"  - {item['id']} -> {item['backend']}:{item['model']} ({item['display_name']})")
+    if len(state_slots) > len(config_aliases):
+        print("Daemon-only compatibility slots:")
+        for item in state_slots[len(config_aliases):]:
+            print(f"  - {item['id']} -> {item['backend']}:{item['model']} ({item['display_name']})")
+
+    if not verify_executable(target):
+        print("Patched executable failed the --version smoke check; restoring model backup.")
+        if backup.exists():
+            shutil.copy2(backup, target)
+        return 1
+    print("Patched executable smoke check passed.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

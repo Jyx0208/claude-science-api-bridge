@@ -2,7 +2,7 @@
 
 _让 Claude Science 使用 DeepSeek、OpenAI、硅基流动 Kimi 以及任意 OpenAI 兼容第三方 API 的本地桥接工具。_
 
-[最新 macOS DMG](https://github.com/Jyx0208/claude-science-api-bridge/releases/latest) · [Linux 说明](docs/linux.md) · [Agent 手册](AGENTS.md) · [故障排查](docs/troubleshooting.md)
+[最新 macOS DMG](https://github.com/Jyx0208/claude-science-api-bridge/releases/latest) · [Windows 说明](docs/windows.md) · [Linux 说明](docs/linux.md) · [Agent 手册](AGENTS.md) · [故障排查](docs/troubleshooting.md)
 
 Claude Science API Bridge 是一个运行在本机的 Anthropic-compatible 代理。它接收 Claude Science 发出的 `/v1/messages`、`/v1/models` 和 OAuth/profile 请求，再把推理请求转成第三方 API 能理解的格式。项目同时提供 macOS 一键安装包、Dashboard、模型菜单补丁、读图适配、一键更新，以及给本地 AI agent 执行的完整操作手册。
 
@@ -46,6 +46,25 @@ export ANTHROPIC_BASE_URL="http://127.0.0.1:9876"
 ```
 
 详细说明见 [docs/linux.md](docs/linux.md)。
+
+### Windows 用户
+
+Claude Science 官方现已提供 Windows 二进制。本仓库提供完整的 Windows 原生脚本（PowerShell，免管理员），包括免登录补丁、模型菜单补丁和本地代理：
+
+```powershell
+git clone https://github.com/Jyx0208/claude-science-api-bridge.git
+cd claude-science-api-bridge
+# 可选：把 API 配置写进 .env.tmp（见 docs/windows.md），然后：
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\install-safe.ps1
+```
+
+安装后用下面命令启动 Claude Science（自动走代理，更新后自动重打补丁）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\start-claude-science.ps1
+```
+
+详细说明见 [docs/windows.md](docs/windows.md)。
 
 ## 这个项目解决什么问题
 
@@ -103,6 +122,7 @@ flowchart LR
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
 | macOS 一键安装包 | 已支持 | `.app + .dmg`，首次打开即可配置 provider |
+| Windows 原生脚本 | 已支持 | PowerShell 免管理员安装、exe 免登录/模型菜单补丁、后台代理、开机自启可选 |
 | Linux 安全安装 | 已支持 | systemd user service 优先，fallback 用户后台进程兜底 |
 | Anthropic to OpenAI 翻译 | 已支持 | 支持流式、非流式、工具调用、工具结果和图片 block |
 | Anthropic 原生透传 | 已支持 | 适合有原生 Anthropic endpoint 的 provider |
@@ -514,11 +534,19 @@ NOTARYTOOL_PROFILE="your-notarytool-profile" \
 │   ├── self-test.sh
 │   ├── start-claude-science.sh
 │   ├── uninstall.sh
-│   └── verify-proxy.sh
+│   ├── verify-proxy.sh
+│   └── windows/            # Windows 原生 PowerShell 脚本
+│       ├── install-safe.ps1 / install-safe.bat
+│       ├── patch_daemon_auth.py / patch_daemon_models.py
+│       ├── start-proxy.ps1 / stop-proxy.ps1
+│       ├── start-claude-science.ps1
+│       ├── doctor.ps1 / verify-proxy.ps1 / uninstall.ps1
+│       └── common.ps1 / apply_env_config.py
 ├── docs/
 │   ├── agent-runbook.md
 │   ├── github-publishing.md
 │   ├── linux.md
+│   ├── windows.md
 │   ├── network-interception.md
 │   ├── release-packaging.md
 │   └── troubleshooting.md

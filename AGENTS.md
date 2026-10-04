@@ -24,7 +24,9 @@ Only use advanced HTTPS interception after the user explicitly approves it for t
 Make Claude Science usable with DeepSeek, OpenAI, or another OpenAI-compatible API provider.
 If the user needs image understanding, choose a vision-capable backend model and preserve image inputs instead of replacing them with text placeholders.
 
-On Linux, support covers the local proxy, Dashboard, service installation, and compatible clients that honor `ANTHROPIC_BASE_URL`. Claude Science desktop startup and daemon patches are macOS-only.
+On Linux, support covers the local proxy, Dashboard, service installation, and compatible clients that honor `ANTHROPIC_BASE_URL`.
+
+On Windows, `scripts/windows/` provides the full native flow (PowerShell 5.1+, no admin): safe install with venv, fake OAuth token, byte-length-preserving auth/model patches against the installed `claude-science.exe`, background proxy with PID file/logs, and an idempotent `start-claude-science.ps1` that re-patches after Claude Science updates. See `docs/windows.md`.
 
 The safe path is:
 
@@ -57,9 +59,11 @@ The safe path is:
 - `scripts/uninstall.sh`: removes LaunchAgent and launchctl env only.
 - `packaging/macos/`: app launcher and release packaging scripts.
 - `setup-network.sh`: advanced HTTPS interception. Treat as opt-in only.
+- `scripts/windows/`: Windows-native equivalents (`install-safe.ps1`, `start-claude-science.ps1`, `patch_daemon_auth.py`, `patch_daemon_models.py`, `doctor.ps1`, `verify-proxy.ps1`, `uninstall.ps1`, plus proxy start/stop helpers).
 - `docs/agent-runbook.md`: step-by-step procedure for agents.
 - `docs/network-interception.md`: advanced interception notes.
 - `docs/linux.md`: Linux systemd/fallback installation and current limitations.
+- `docs/windows.md`: Windows native installation, patches, and troubleshooting.
 - `docs/troubleshooting.md`: failure modes and fixes.
 - `config.example.json`: public, sanitized config template.
 
